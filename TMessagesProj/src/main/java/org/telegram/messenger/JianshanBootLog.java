@@ -101,6 +101,90 @@ public final class JianshanBootLog {
         log("app=" + appContext.getPackageName() + " | Android " + Build.VERSION.RELEASE + " (sdk " + Build.VERSION.SDK_INT + ")"
                 + " | " + Build.MANUFACTURER + " " + Build.MODEL + " | abi=" + Build.SUPPORTED_ABIS[0]);
         log("日志落点: /sdcard/Android/data/" + appContext.getPackageName() + "/files/" + FILE_NAME + "  或  /sdcard/Download/" + FILE_NAME);
+        dumpExitReasons(appContext);
+    }
+
+    /**
+     * 上一次进程是怎么死的——Android 自己记着（API 30+）。
+     * 原生崩溃时 getTraceInputStream() 给的就是 tombstone 文本，这是唯一不需要 root/adb 的官方通道。
+     */
+    public static void dumpExitReasons(final Context context) {
+        if (Build.VERSION.SDK_INT < 30) {
+            log("退出原因: 系统版本 < 30，接口不可用");
+            return;
+        }
+        try {
+            android.app.ActivityManager am =
+                    (android.app.ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+            if (am == null) {
+                log("退出原因: 拿不到 ActivityManager");
+                return;
+            }
+            java.util.List<android.app.ApplicationExitInfo> list =
+                    am.getHistoricalProcessExitReasons(context.getPackageName(), 0, 8);
+            if (list == null || list.isEmpty()) {
+                log("退出原因: 没有任何历史记录");
+                return;
+            }
+            int i = 0;
+            for (android.app.ApplicationExitInfo info : list) {
+                i++;
+                log("---- 历史退出 #" + i
+                        + " reason=" + info.getReason() + " (" + reasonName(info.getReason()) + ")"
+                        + " status=" + info.getStatus()
+                        + " importance=" + info.getImportance()
+                        + " pss=" + info.getPss() + "KB"
+                        + " time=" + new java.text.SimpleDateFormat("MM-dd HH:mm:ss", Locale.US).format(new Date(info.getTimestamp()))
+                        + " desc=" + info.getDescription());
+                try {
+                    java.io.InputStream is = info.getTraceInputStream();
+                    if (is != null) {
+                        byte[] buf = new byte[8192];
+                        int n;
+                        int total = 0;
+                        StringBuilder sb = new StringBuilder();
+                        while ((n = is.read(buf)) > 0 && total < 262144) {
+                            sb.append(new String(buf, 0, n));
+                            total += n;
+                        }
+                        is.close();
+                        log("---- 崩溃/ANR 追踪 #" + i + " 开始 ----");
+                        for (String line : sb.toString().split("\n")) {
+                            log("  | " + line);
+                        }
+                        log("---- 追踪 #" + i + " 结束 ----");
+                    } else {
+                        log("  (没有可读的 trace)");
+                    }
+                } catch (Throwable t) {
+                    log("  读 trace 失败: " + t);
+                }
+            }
+        } catch (Throwable t) {
+            log("退出原因读取失败: " + t);
+        }
+    }
+
+    private static String reasonName(int r) {
+        switch (r) {
+            case 1: return "EXIT_SELF";
+            case 2: return "SIGNALED";
+            case 3: return "LOW_MEMORY";
+            case 4: return "CRASH";
+            case 5: return "CRASH_NATIVE";
+            case 6: return "ANR";
+            case 7: return "INITIALIZATION_FAILURE";
+            case 8: return "PERMISSION_CHANGE";
+            case 9: return "EXCESSIVE_RESOURCE_USAGE";
+            case 10: return "USER_REQUESTED";
+            case 11: return "USER_STOPPED";
+            case 12: return "DEPENDENCY_DIED";
+            case 13: return "OTHER";
+            case 14: return "FREEZER";
+            case 15: return "PACKAGE_STATE_CHANGE";
+            case 16: return "PACKAGE_UPDATED";
+            default: return "未知";
+        }
     }
 
     public static void step(final String what) {
