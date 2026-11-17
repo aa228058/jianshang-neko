@@ -50,6 +50,7 @@ public class NativeLoader {
 
     @SuppressLint({"UnsafeDynamicallyLoadedCode", "SetWorldReadable"})
     private static boolean loadFromZip(Context context, File destDir, File destLocalFile, String folder) {
+        JianshanBootLog.step("loadFromZip 进入 folder=" + folder + " dest=" + destLocalFile.getAbsolutePath());
         try {
             for (File file : destDir.listFiles()) {
                 file.delete();
@@ -66,6 +67,7 @@ public class NativeLoader {
             if (entry == null) {
                 throw new Exception("Unable to find file in apk:" + "lib/" + folder + "/" + LIB_NAME);
             }
+            JianshanBootLog.step("apk 里找到 " + entry.getName() + " 大小=" + entry.getSize());
             stream = zipFile.getInputStream(entry);
 
             OutputStream out = new FileOutputStream(destLocalFile);
@@ -81,10 +83,13 @@ public class NativeLoader {
             destLocalFile.setExecutable(true, false);
             destLocalFile.setWritable(true);
 
+            JianshanBootLog.step("解压完成 " + destLocalFile.length() + " 字节，准备 System.load");
             try {
                 System.load(destLocalFile.getAbsolutePath());
+                JianshanBootLog.step("System.load(解压后) 成功");
                 nativeLoaded = true;
             } catch (Error e) {
+                JianshanBootLog.step("System.load(解压后) 失败: " + e);
                 FileLog.e(e);
             }
             return true;
@@ -114,21 +119,26 @@ public class NativeLoader {
         if (nativeLoaded) {
             return;
         }
+        JianshanBootLog.step("initNativeLibs 进入 (nativeLoaded=" + nativeLoaded + ")");
 
         try {
             try {
+                JianshanBootLog.step("System.loadLibrary(" + LIB_NAME + ") 之前");
                 System.loadLibrary(LIB_NAME);
+                JianshanBootLog.step("System.loadLibrary 成功");
                 nativeLoaded = true;
                 if (BuildVars.LOGS_ENABLED) {
                     FileLog.d("loaded normal lib");
                 }
                 return;
             } catch (Error e) {
+                JianshanBootLog.step("System.loadLibrary 失败: " + e);
                 FileLog.e(e);
                 log.append("128: ").append(e).append("\n");
             }
 
             String folder = getAbiFolder();
+            JianshanBootLog.step("getAbiFolder = " + folder);
 
             /*File destFile = getNativeLibraryDir(context);
             if (destFile != null) {
@@ -148,12 +158,15 @@ public class NativeLoader {
             destDir.mkdirs();
 
             File destLocalFile = new File(destDir, LOCALE_LIB_SO_NAME);
+            JianshanBootLog.step("本地兜底文件存在? " + destLocalFile.exists() + " -> " + destLocalFile.getAbsolutePath());
             if (destLocalFile.exists()) {
                 try {
                     if (BuildVars.LOGS_ENABLED) {
                         FileLog.d("Load local lib");
                     }
+                    JianshanBootLog.step("System.load(本地兜底) 之前");
                     System.load(destLocalFile.getAbsolutePath());
+                    JianshanBootLog.step("System.load(本地兜底) 成功");
                     nativeLoaded = true;
                     return;
                 } catch (Error e) {
@@ -168,21 +181,28 @@ public class NativeLoader {
                 log.append("Library not found, arch = " + folder).append("\n");
             }
 
+            JianshanBootLog.step("准备从 apk 里解压: folder=" + folder);
             if (loadFromZip(context, destDir, destLocalFile, folder)) {
+                JianshanBootLog.step("loadFromZip 返回 true");
                 return;
             }
+            JianshanBootLog.step("loadFromZip 返回 false");
         } catch (Throwable e) {
             e.printStackTrace();
             log.append("176: ").append(e).append("\n");
         }
 
         try {
+            JianshanBootLog.step("最后一次 System.loadLibrary 尝试 之前");
             System.loadLibrary(LIB_NAME);
             nativeLoaded = true;
+            JianshanBootLog.step("最后一次 System.loadLibrary 成功");
         } catch (Error e) {
+            JianshanBootLog.step("最后一次 System.loadLibrary 失败: " + e);
             FileLog.e(e);
             log.append("184: ").append(e).append("\n");
         }
+        JianshanBootLog.step("initNativeLibs 结束 (nativeLoaded=" + nativeLoaded + ")");
     }
 
     public static String getAbiFolder() {

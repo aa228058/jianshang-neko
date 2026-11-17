@@ -5,23 +5,27 @@ import android.content.Context;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
-import android.os.Handler;
 import android.os.Looper;
 import android.provider.MediaStore;
 import android.util.Log;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.LinkedBlockingQueue;
 
 /**
- * 启动诊断日志（诊断版专用）。
+ * 启动诊断日志 v2。
  *
- * 目的：App 卡开屏时界面根本起不来，设置里的"发送日志"用不了，logcat 又需要电脑。
- * 所以把每一步启动进度 + 卡住时的线程堆栈，直接写到公共「下载」目录的 jianshan_boot.txt，
- * 用户用文件管理器就能取出来。
+ * 关键改动（v1 的教训）：
+ *  1) 主线程只写「应用私有目录」的文件流，写公共下载目录走**独立后台线程**，
+ *     这样即使 MediaStore 卡住也不会把主线程拖死（避免我们自己制造卡顿）。
+ *  2) 增加心跳线程：每 2 秒记一次主线程状态，并在第 12/24 秒转储堆栈。
+ *     进程被杀 → 心跳停止；主线程卡死 → 心跳继续但状态是 RUNNABLE/BLOCKED。
  */
 public final class JianshanBootLog {
 
@@ -29,8 +33,9 @@ public final class JianshanBootLog {
     private static final long T0 = android.os.SystemClock.elapsedRealtime();
 
     private static volatile boolean installed;
-    private static OutputStream publicStream;
-    private static java.io.File privateFile;
+    private static volatile boolean heartbeatStarted;
+    private static volatile FileOutputStream privateStream;
+    private static final LinkedBlockingQueue<String> PUBLIC_QUEUE = new LinkedBlockingQueue<>();
 
     private JianshanBootLog() {
     }
@@ -39,39 +44,65 @@ public final class JianshanBootLog {
         if (installed || context == null) {
             return;
         }
-        installed = true;
-        // 老文件先删掉，保证用户拿到的是这一次启动的
+        // 小部件引擎是独立进程，它一启动就会把日志冲掉，只在主进程记
         try {
-            if (Build.VERSION.SDK_INT >= 29) {
-                context.getContentResolver().delete(
-                        MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                        MediaStore.MediaColumns.DISPLAY_NAME + "=?",
-                        new String[]{FILE_NAME});
-            }
-        } catch (Throwable ignore) {
-        }
-        try {
-            privateFile = new java.io.File(context.getFilesDir(), FILE_NAME);
-            if (privateFile.exists()) {
-                //noinspection ResultOfMethodCallIgnored
-                privateFile.delete();
-            }
-        } catch (Throwable ignore) {
-        }
-        try {
-            if (Build.VERSION.SDK_INT >= 29) {
-                ContentValues v = new ContentValues();
-                v.put(MediaStore.MediaColumns.DISPLAY_NAME, FILE_NAME);
-                v.put(MediaStore.MediaColumns.MIME_TYPE, "text/plain");
-                v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
-                Uri uri = context.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
-                if (uri != null) {
-                    publicStream = context.getContentResolver().openOutputStream(uri, "w");
+            if (Build.VERSION.SDK_INT >= 28) {
+                String pn = android.app.Application.getProcessName();
+                if (pn != null && pn.contains("widget")) {
+                    return;
                 }
-            } else {
-                java.io.File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-                publicStream = new java.io.FileOutputStream(new java.io.File(dir, FILE_NAME), false);
             }
+        } catch (Throwable ignore) {
+        }
+        installed = true;
+        try {
+            File f = new File(context.getFilesDir(), FILE_NAME);
+            if (f.exists()) {
+                //noinspection ResultOfMethodCallIgnored
+                f.delete();
+            }
+            privateStream = new FileOutputStream(f, true);
+        } catch (Throwable ignore) {
+        }
+        // 公共目录镜像：完全在后台线程做，主线程永不被它阻塞
+        try {
+            final Context app = context.getApplicationContext() != null ? context.getApplicationContext() : context;
+            Thread t = new Thread(() -> {
+                OutputStream os = null;
+                try {
+                    if (Build.VERSION.SDK_INT >= 29) {
+                        app.getContentResolver().delete(
+                                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                MediaStore.MediaColumns.DISPLAY_NAME + "=?",
+                                new String[]{FILE_NAME});
+                        ContentValues v = new ContentValues();
+                        v.put(MediaStore.MediaColumns.DISPLAY_NAME, FILE_NAME);
+                        v.put(MediaStore.MediaColumns.MIME_TYPE, "text/plain");
+                        v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                        Uri uri = app.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                        if (uri != null) {
+                            os = app.getContentResolver().openOutputStream(uri, "w");
+                        }
+                    } else {
+                        File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                        os = new FileOutputStream(new File(dir, FILE_NAME), false);
+                    }
+                } catch (Throwable ignore) {
+                }
+                final OutputStream out = os;
+                while (true) {
+                    try {
+                        String line = PUBLIC_QUEUE.take();
+                        if (out != null) {
+                            out.write(line.getBytes());
+                            out.flush();
+                        }
+                    } catch (Throwable ignore) {
+                    }
+                }
+            }, "js-log-mirror");
+            t.setDaemon(true);
+            t.start();
         } catch (Throwable ignore) {
         }
         final Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
@@ -81,7 +112,7 @@ public final class JianshanBootLog {
                 prev.uncaughtException(t, e);
             }
         });
-        log("======== 见山诊断版启动 ========");
+        log("======== 见山诊断版 v2 启动 ========");
         log("app=" + context.getPackageName() + " | Android " + Build.VERSION.RELEASE + " (sdk " + Build.VERSION.SDK_INT + ")"
                 + " | " + Build.MANUFACTURER + " " + Build.MODEL + " | abi=" + Build.SUPPORTED_ABIS[0]);
     }
@@ -92,61 +123,66 @@ public final class JianshanBootLog {
 
     public static void log(final String line) {
         String stamp = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(new Date());
-        write(stamp + "  " + line + "\n");
+        String text = stamp + "  " + line + "\n";
+        synchronized (JianshanBootLog.class) {
+            FileOutputStream fos = privateStream;
+            if (fos != null) {
+                try {
+                    fos.write(text.getBytes());
+                    fos.flush();
+                } catch (Throwable ignore) {
+                }
+            }
+        }
+        try {
+            PUBLIC_QUEUE.offer(text);
+        } catch (Throwable ignore) {
+        }
         Log.e("JianshanBoot", line);
     }
 
-    private static synchronized void write(final String text) {
-        if (privateFile != null) {
-            try {
-                java.io.FileOutputStream fos = new java.io.FileOutputStream(privateFile, true);
-                fos.write(text.getBytes());
-                fos.close();
-            } catch (Throwable ignore) {
-            }
+    /** 心跳：区分「进程被杀」和「主线程卡死」 */
+    public static void startHeartbeat() {
+        if (heartbeatStarted) {
+            return;
         }
-        if (publicStream != null) {
-            try {
-                publicStream.write(text.getBytes());
-                publicStream.flush();
-            } catch (Throwable ignore) {
+        heartbeatStarted = true;
+        Thread t = new Thread(() -> {
+            Thread main = Looper.getMainLooper().getThread();
+            for (int i = 1; i <= 40; i++) {
+                try {
+                    Thread.sleep(2000);
+                } catch (InterruptedException e) {
+                    return;
+                }
+                log("[hb " + (i * 2) + "s] 主线程 state=" + main.getState());
+                if (i == 6 || i == 12) {
+                    log("==== 第 " + (i == 6 ? 1 : 2) + " 次转储 ====");
+                    dumpThreads();
+                }
             }
-        }
-    }
-
-    /**
-     * 卡住时把主线程和所有线程的堆栈打下来——这比任何猜测都直接。
-     */
-    public static void watchdog(final long delayMs) {
-        final Handler handler = new Handler(Looper.getMainLooper());
-        handler.postDelayed(() -> {
-            log("---- 已过 " + (android.os.SystemClock.elapsedRealtime() - T0) + "ms：主线程仍然没走完，转储堆栈 ----");
-            dumpThreads();
-            // 再等一会儿看是彻底卡死还是慢
-            handler.postDelayed(() -> {
-                log("---- 已过 " + (android.os.SystemClock.elapsedRealtime() - T0) + "ms：第二次转储 ----");
-                dumpThreads();
-            }, 10000);
-        }, delayMs);
+        }, "js-heartbeat");
+        t.setDaemon(true);
+        t.start();
     }
 
     public static void dumpThreads() {
         try {
             Thread main = Looper.getMainLooper().getThread();
-            log("==== 主线程堆栈 (" + main.getName() + ", state=" + main.getState() + ") ====");
+            log("---- 主线程堆栈 (" + main.getName() + ", state=" + main.getState() + ") ----");
             for (StackTraceElement e : main.getStackTrace()) {
-                write("    at " + e + "\n");
+                log("    at " + e);
             }
-            log("==== 全部线程 ====");
+            log("---- 其它线程 ----");
             for (Map.Entry<Thread, StackTraceElement[]> en : Thread.getAllStackTraces().entrySet()) {
-                Thread t = en.getKey();
-                if (t == main) {
+                Thread th = en.getKey();
+                if (th == main) {
                     continue;
                 }
-                write("  thread " + t.getName() + " state=" + t.getState() + "\n");
+                log("  thread " + th.getName() + " state=" + th.getState());
                 StackTraceElement[] st = en.getValue();
-                for (int i = 0; i < Math.min(st.length, 12); i++) {
-                    write("      at " + st[i] + "\n");
+                for (int i = 0; i < Math.min(st.length, 10); i++) {
+                    log("      at " + st[i]);
                 }
             }
         } catch (Throwable t) {

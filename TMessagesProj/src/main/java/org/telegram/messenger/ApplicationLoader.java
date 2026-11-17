@@ -300,6 +300,7 @@ public class ApplicationLoader extends Application {
     @Override
     public void onCreate() {
         JianshanBootLog.install(this);
+        JianshanBootLog.startHeartbeat();
         JianshanBootLog.step("onCreate 进入");
         applicationLoaderInstance = this;
         try {
@@ -392,7 +393,6 @@ public class ApplicationLoader extends Application {
         AndroidUtilities.runOnUIThread(ApplicationLoader::startPushService);
         countDownLatch.countDown();
         JianshanBootLog.step("onCreate 结束");
-        JianshanBootLog.watchdog(12000);
 
         LauncherIconController.tryFixLauncherIconIfNeeded();
         ProxyRotationController.init();
