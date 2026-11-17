@@ -1,4 +1,4 @@
-name: Build 见山 (Neko clean)
+name: Build 见山 (无 ccache)
 
 on:
   workflow_dispatch:
@@ -14,11 +14,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 240
-    env:
-      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
-      CCACHE_HARDLINK: "true"
-      CCACHE_NOHASHDIR: "true"
-      CCACHE_MAXSIZE: "5G"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,11 +34,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-
-      - name: Set up ccache
-        uses: Chocobo1/setup-ccache-action@v1
-        with:
-          remove_stale_cache: false
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -125,6 +115,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: jianshan-clean
+          name: jianshan-noccache
           path: TMessagesProj_App/build/outputs/apk/**/*.apk
           if-no-files-found: error
