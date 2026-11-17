@@ -1,4 +1,4 @@
-name: Build 见山 (Neko clean)
+name: Build 见山 (修复 + 自有包名)
 
 on:
   workflow_dispatch:
@@ -95,7 +95,11 @@ jobs:
           echo "helperBotUsername=${{ secrets.HELPER_BOT_USERNAME }}" >> local.properties
           echo "sentryDsn=${{ secrets.SENTRY_DSN }}"                >> local.properties
           echo "mapsApiKey=${{ secrets.MAPS_API_KEY }}"             >> local.properties
-          echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 -d > TMessagesProj_App/google-services.json
+          if [ -f TMessagesProj_App/google-services.json ]; then
+            echo "→ 使用仓库内自带的 google-services.json"
+          else
+            echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 -d > TMessagesProj_App/google-services.json
+          fi
           python3 -c "import json;d=json.load(open('TMessagesProj_App/google-services.json'));print('gms packages:',[c['client_info']['android_client_info']['package_name'] for c in d['client']])"
           sed 's/^\(apiHash\|storePassword\|keyPassword\)=.*/\1=****/' local.properties
 
@@ -125,6 +129,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: jianshan-clean
+          name: jianshan-fixpkg
           path: TMessagesProj_App/build/outputs/apk/**/*.apk
           if-no-files-found: error
