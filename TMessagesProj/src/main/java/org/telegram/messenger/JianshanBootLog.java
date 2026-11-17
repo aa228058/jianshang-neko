@@ -1,5 +1,6 @@
 package org.telegram.messenger;
 
+import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
 import android.net.Uri;
@@ -16,26 +17,36 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.LinkedBlockingQueue;
 
 /**
- * 启动诊断日志 v2。
+ * 启动诊断日志 v3。
  *
- * 关键改动（v1 的教训）：
- *  1) 主线程只写「应用私有目录」的文件流，写公共下载目录走**独立后台线程**，
- *     这样即使 MediaStore 卡住也不会把主线程拖死（避免我们自己制造卡顿）。
- *  2) 增加心跳线程：每 2 秒记一次主线程状态，并在第 12/24 秒转储堆栈。
- *     进程被杀 → 心跳停止；主线程卡死 → 心跳继续但状态是 RUNNABLE/BLOCKED。
+ * v1 教训：主线程同步写公共目录，可能把主线程拖死。
+ * v2 教训：先删后建，如果建失败就一个文件都没有（比没有日志更糟）。
+ *
+ * v3 策略：
+ *   1) 主线程只往「应用私有文件」写，微秒级，绝不会卡；
+ *   2) 内存里同时留一份完整文本 BUFFER；
+ *   3) 一个后台线程每 3 秒把 BUFFER **整份**写到一个固定名字的文件，
+ *      连写多条通道，任何一条成功，用户就一定能拿到日志：
+ *        a. 应用外部文件目录 /sdcard/Android/data/<pkg>/files/jianshan_boot.txt（最稳，不需权限）
+ *        b. 公共「下载」/Download/jianshan_boot.txt（MediaStore）
+ *        c. 上面 a/b 都失败时，用带时间戳的文件名再试
+ *      **从不删除**任何已有文件，只覆盖写自己那个。
+ *   4) 心跳线程：每 2 秒一行主线程状态，第 12/24 秒转储全部线程堆栈。
  */
 public final class JianshanBootLog {
 
     private static final String FILE_NAME = "jianshan_boot.txt";
     private static final long T0 = android.os.SystemClock.elapsedRealtime();
+    private static final StringBuilder BUFFER = new StringBuilder();
 
     private static volatile boolean installed;
     private static volatile boolean heartbeatStarted;
     private static volatile FileOutputStream privateStream;
-    private static final LinkedBlockingQueue<String> PUBLIC_QUEUE = new LinkedBlockingQueue<>();
+    private static volatile File externalFile;
+    private static volatile Context appContext;
+    private static volatile String channelReport = "尚未尝试";
 
     private JianshanBootLog() {
     }
@@ -44,7 +55,6 @@ public final class JianshanBootLog {
         if (installed || context == null) {
             return;
         }
-        // 小部件引擎是独立进程，它一启动就会把日志冲掉，只在主进程记
         try {
             if (Build.VERSION.SDK_INT >= 28) {
                 String pn = android.app.Application.getProcessName();
@@ -55,8 +65,9 @@ public final class JianshanBootLog {
         } catch (Throwable ignore) {
         }
         installed = true;
+        appContext = context.getApplicationContext() != null ? context.getApplicationContext() : context;
         try {
-            File f = new File(context.getFilesDir(), FILE_NAME);
+            File f = new File(appContext.getFilesDir(), FILE_NAME);
             if (f.exists()) {
                 //noinspection ResultOfMethodCallIgnored
                 f.delete();
@@ -64,57 +75,32 @@ public final class JianshanBootLog {
             privateStream = new FileOutputStream(f, true);
         } catch (Throwable ignore) {
         }
-        // 公共目录镜像：完全在后台线程做，主线程永不被它阻塞
+        // 应用外部文件目录：普通文件写，不需要任何权限
         try {
-            final Context app = context.getApplicationContext() != null ? context.getApplicationContext() : context;
-            Thread t = new Thread(() -> {
-                OutputStream os = null;
-                try {
-                    if (Build.VERSION.SDK_INT >= 29) {
-                        app.getContentResolver().delete(
-                                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                                MediaStore.MediaColumns.DISPLAY_NAME + "=?",
-                                new String[]{FILE_NAME});
-                        ContentValues v = new ContentValues();
-                        v.put(MediaStore.MediaColumns.DISPLAY_NAME, FILE_NAME);
-                        v.put(MediaStore.MediaColumns.MIME_TYPE, "text/plain");
-                        v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
-                        Uri uri = app.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
-                        if (uri != null) {
-                            os = app.getContentResolver().openOutputStream(uri, "w");
-                        }
-                    } else {
-                        File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-                        os = new FileOutputStream(new File(dir, FILE_NAME), false);
-                    }
-                } catch (Throwable ignore) {
+            File dir = appContext.getExternalFilesDir(null);
+            if (dir != null) {
+                dir.mkdirs();
+                externalFile = new File(dir, FILE_NAME);
+                if (externalFile.exists()) {
+                    //noinspection ResultOfMethodCallIgnored
+                    externalFile.delete();
                 }
-                final OutputStream out = os;
-                while (true) {
-                    try {
-                        String line = PUBLIC_QUEUE.take();
-                        if (out != null) {
-                            out.write(line.getBytes());
-                            out.flush();
-                        }
-                    } catch (Throwable ignore) {
-                    }
-                }
-            }, "js-log-mirror");
-            t.setDaemon(true);
-            t.start();
+            }
         } catch (Throwable ignore) {
         }
+        startMirror();
         final Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
         Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
             log("!!! CRASH in thread " + t.getName() + " : " + Log.getStackTraceString(e));
+            flushNow();
             if (prev != null) {
                 prev.uncaughtException(t, e);
             }
         });
-        log("======== 见山诊断版 v2 启动 ========");
-        log("app=" + context.getPackageName() + " | Android " + Build.VERSION.RELEASE + " (sdk " + Build.VERSION.SDK_INT + ")"
+        log("======== 见山诊断版 v3 启动 ========");
+        log("app=" + appContext.getPackageName() + " | Android " + Build.VERSION.RELEASE + " (sdk " + Build.VERSION.SDK_INT + ")"
                 + " | " + Build.MANUFACTURER + " " + Build.MODEL + " | abi=" + Build.SUPPORTED_ABIS[0]);
+        log("日志落点: /sdcard/Android/data/" + appContext.getPackageName() + "/files/" + FILE_NAME + "  或  /sdcard/Download/" + FILE_NAME);
     }
 
     public static void step(final String what) {
@@ -124,24 +110,131 @@ public final class JianshanBootLog {
     public static void log(final String line) {
         String stamp = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(new Date());
         String text = stamp + "  " + line + "\n";
-        synchronized (JianshanBootLog.class) {
-            FileOutputStream fos = privateStream;
-            if (fos != null) {
+        synchronized (BUFFER) {
+            BUFFER.append(text);
+        }
+        FileOutputStream fos = privateStream;
+        if (fos != null) {
+            try {
+                fos.write(text.getBytes());
+                fos.flush();
+            } catch (Throwable ignore) {
+            }
+        }
+        Log.e("JianshanBoot", line);
+        // 应用外部目录逐行写，保证即使进程马上被杀也有内容
+        File ext = externalFile;
+        if (ext != null) {
+            try {
+                FileOutputStream e = new FileOutputStream(ext, true);
+                e.write(text.getBytes());
+                e.close();
+            } catch (Throwable ignore) {
+            }
+        }
+    }
+
+    private static String snapshot() {
+        synchronized (BUFFER) {
+            return BUFFER.toString();
+        }
+    }
+
+    /** 把整份日志写进公共「下载」目录，多条通道依次尝试 */
+    private static void mirrorOnce(final String text) {
+        if (appContext == null) {
+            return;
+        }
+        StringBuilder report = new StringBuilder();
+        // 通道 B：公共下载（MediaStore）
+        try {
+            ContentResolver cr = appContext.getContentResolver();
+            Uri uri = null;
+            if (Build.VERSION.SDK_INT >= 29) {
+                cr.delete(MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                        MediaStore.MediaColumns.DISPLAY_NAME + "=?", new String[]{FILE_NAME});
+                ContentValues v = new ContentValues();
+                v.put(MediaStore.MediaColumns.DISPLAY_NAME, FILE_NAME);
+                v.put(MediaStore.MediaColumns.MIME_TYPE, "text/plain");
+                v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                uri = cr.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+            } else {
+                File legacy = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), FILE_NAME);
+                FileOutputStream lf = new FileOutputStream(legacy, false);
+                lf.write(text.getBytes());
+                lf.close();
+                report.append("下载(legacy)=OK ");
+            }
+            if (uri != null) {
+                OutputStream os = cr.openOutputStream(uri, "w");
+                if (os != null) {
+                    os.write(text.getBytes());
+                    os.close();
+                    report.append("下载=OK ");
+                } else {
+                    report.append("下载流=空 ");
+                }
+            } else if (Build.VERSION.SDK_INT >= 29) {
+                report.append("下载insert=空 ");
+            }
+        } catch (Throwable t) {
+            report.append("下载失败=").append(t.getClass().getSimpleName()).append(' ');
+        }
+        // 通道 C：带时间戳的名字兜底
+        if (!report.toString().contains("=OK")) {
+            try {
+                ContentValues v = new ContentValues();
+                String name = "jianshan_boot_" + new SimpleDateFormat("MMdd_HHmmss", Locale.US).format(new Date()) + ".txt";
+                v.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
+                v.put(MediaStore.MediaColumns.MIME_TYPE, "text/plain");
+                if (Build.VERSION.SDK_INT >= 29) {
+                    v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                }
+                Uri uri = appContext.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                if (uri != null) {
+                    OutputStream os = appContext.getContentResolver().openOutputStream(uri, "w");
+                    if (os != null) {
+                        os.write(text.getBytes());
+                        os.close();
+                        report.append("时间戳文件=OK");
+                    }
+                }
+            } catch (Throwable t) {
+                report.append("时间戳失败=").append(t.getClass().getSimpleName());
+            }
+        }
+        report.append(externalFile != null ? " | 外部文件目录=OK" : " | 外部文件目录=无");
+        channelReport = report.toString();
+    }
+
+    private static void startMirror() {
+        Thread t = new Thread(() -> {
+            for (int i = 0; i < 60; i++) {
                 try {
-                    fos.write(text.getBytes());
-                    fos.flush();
+                    Thread.sleep(3000);
+                } catch (InterruptedException e) {
+                    return;
+                }
+                String text = snapshot();
+                try {
+                    mirrorOnce(text);
                 } catch (Throwable ignore) {
                 }
             }
-        }
-        try {
-            PUBLIC_QUEUE.offer(text);
-        } catch (Throwable ignore) {
-        }
-        Log.e("JianshanBoot", line);
+        }, "js-mirror");
+        t.setDaemon(true);
+        t.start();
     }
 
-    /** 心跳：区分「进程被杀」和「主线程卡死」 */
+    /** 崩溃前尽量把整份日志再刷一次 */
+    public static void flushNow() {
+        try {
+            mirrorOnce(snapshot());
+            log("[通道状态] " + channelReport);
+        } catch (Throwable ignore) {
+        }
+    }
+
     public static void startHeartbeat() {
         if (heartbeatStarted) {
             return;
@@ -181,7 +274,7 @@ public final class JianshanBootLog {
                 }
                 log("  thread " + th.getName() + " state=" + th.getState());
                 StackTraceElement[] st = en.getValue();
-                for (int i = 0; i < Math.min(st.length, 10); i++) {
+                for (int i = 0; i < Math.min(st.length, 8); i++) {
                     log("      at " + st[i]);
                 }
             }

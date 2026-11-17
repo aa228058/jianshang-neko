@@ -300,6 +300,7 @@ public class ApplicationLoader extends Application {
     @Override
     public void onCreate() {
         JianshanBootLog.install(this);
+        JianshanBootLog.step("onCreate 已进入，安装心跳");
         JianshanBootLog.startHeartbeat();
         JianshanBootLog.step("onCreate 进入");
         applicationLoaderInstance = this;
