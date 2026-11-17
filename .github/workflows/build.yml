@@ -1,4 +1,4 @@
-name: Build 见山 (Neko clean)
+name: Build 见山 (stock + 包名)
 
 on:
   workflow_dispatch:
@@ -96,7 +96,19 @@ jobs:
           echo "sentryDsn=${{ secrets.SENTRY_DSN }}"                >> local.properties
           echo "mapsApiKey=${{ secrets.MAPS_API_KEY }}"             >> local.properties
           echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 -d > TMessagesProj_App/google-services.json
-          python3 -c "import json;d=json.load(open('TMessagesProj_App/google-services.json'));print('gms packages:',[c['client_info']['android_client_info']['package_name'] for c in d['client']])"
+          # 让 google-services.json 的 package_name 跟当前 APP_PACKAGE 对齐（插件要求严格匹配）
+          APP_PKG=$(grep -oP '^APP_PACKAGE=\K.*' gradle.properties)
+          echo "APP_PACKAGE = $APP_PKG"
+          python3 - "$APP_PKG" <<'PYEOF'
+          import json,sys
+          pkg=sys.argv[1]
+          f='TMessagesProj_App/google-services.json'
+          d=json.load(open(f))
+          for c in d.get('client',[]):
+              c['client_info']['android_client_info']['package_name']=pkg
+          json.dump(d,open(f,'w'),indent=2)
+          print('gms package_name 已对齐:',[c['client_info']['android_client_info']['package_name'] for c in d['client']])
+          PYEOF
           sed 's/^\(apiHash\|storePassword\|keyPassword\)=.*/\1=****/' local.properties
 
       - name: Build
@@ -125,6 +137,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: jianshan-clean
+          name: jianshan-pkg
           path: TMessagesProj_App/build/outputs/apk/**/*.apk
           if-no-files-found: error
