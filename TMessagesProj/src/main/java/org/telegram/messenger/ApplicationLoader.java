@@ -200,7 +200,9 @@ public class ApplicationLoader extends Application {
             return;
         }
         applicationInited = true;
+        JianshanBootLog.step("postInitApplication 开始");
         NativeLoader.initNativeLibs(ApplicationLoader.applicationContext);
+        JianshanBootLog.step("postInitApplication: 动态库 ok");
 
         try {
             LocaleController.getInstance(); //TODO improve
@@ -297,6 +299,8 @@ public class ApplicationLoader extends Application {
 
     @Override
     public void onCreate() {
+        JianshanBootLog.install(this);
+        JianshanBootLog.step("onCreate 进入");
         applicationLoaderInstance = this;
         try {
             applicationContext = getApplicationContext();
@@ -312,9 +316,15 @@ public class ApplicationLoader extends Application {
         }
 
         // AndroidUtilities must be initialized before FileLog
+        JianshanBootLog.step("getHelloWorld 之前");
         final String helloWorld = AndroidUtilities.getHelloWorld();
+        JianshanBootLog.step("getHelloWorld 完成: " + helloWorld);
+        JianshanBootLog.step("AnalyticsHelper.start 之前");
         AnalyticsHelper.start(this);
+        JianshanBootLog.step("AnalyticsHelper.start 完成");
+        JianshanBootLog.step("CronetHelper.init 之前");
         CronetHelper.init(this);
+        JianshanBootLog.step("CronetHelper.init 完成");
 
         if (BuildVars.LOGS_ENABLED) {
             FileLog.d(helloWorld);
@@ -346,11 +356,16 @@ public class ApplicationLoader extends Application {
             applicationContext = getApplicationContext();
         }
 
+        JianshanBootLog.step("initNativeLibs(onCreate) 之前");
         NativeLoader.initNativeLibs(ApplicationLoader.applicationContext);
+        JianshanBootLog.step("initNativeLibs(onCreate) 完成");
 
         try {
+            JianshanBootLog.step("native_setJava 之前");
             ConnectionsManager.native_setJava(false);
+            JianshanBootLog.step("native_setJava 完成");
         } catch (UnsatisfiedLinkError error) {
+            JianshanBootLog.log("!!! native 库加载失败: " + error);
             throw new RuntimeException("can't load native libraries " +  Build.CPU_ABI + " lookup folder " + NativeLoader.getAbiFolder());
         }
         new ForegroundDetector(this) {
@@ -373,8 +388,11 @@ public class ApplicationLoader extends Application {
 
         applicationHandler = new Handler(applicationContext.getMainLooper());
 
+        JianshanBootLog.step("runOnUIThread(startPushService) 排队");
         AndroidUtilities.runOnUIThread(ApplicationLoader::startPushService);
         countDownLatch.countDown();
+        JianshanBootLog.step("onCreate 结束");
+        JianshanBootLog.watchdog(12000);
 
         LauncherIconController.tryFixLauncherIconIfNeeded();
         ProxyRotationController.init();

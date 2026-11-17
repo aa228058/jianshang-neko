@@ -43,9 +43,12 @@ public class AnalyticsHelper {
         if (userId == null || userId.length() < 32) {
             preferences.edit().putString("userId", userId = generateUserID()).apply();
         }
+        org.telegram.messenger.JianshanBootLog.step("Analytics: FirebaseAnalytics.getInstance 之前");
         firebaseAnalytics = FirebaseAnalytics.getInstance(application);
+        org.telegram.messenger.JianshanBootLog.step("Analytics: FirebaseAnalytics.getInstance 完成");
         firebaseAnalytics.setAnalyticsCollectionEnabled(true);
         firebaseAnalytics.setUserId(userId);
+        org.telegram.messenger.JianshanBootLog.step("Analytics: SentryAndroid.init 之前 (dsn=" + (Extra.SENTRY_DSN == null ? "null" : Extra.SENTRY_DSN.length() + "字符") + ")");
         SentryAndroid.init(application, options -> {
             options.setDsn(Extra.SENTRY_DSN);
             options.setEnvironment(BuildConfig.BUILD_TYPE);
@@ -56,9 +59,11 @@ public class AnalyticsHelper {
             options.setEnableSystemEventBreadcrumbsExtras(true);
             options.setTracesSampleRate(0.01);
         });
+        org.telegram.messenger.JianshanBootLog.step("Analytics: SentryAndroid.init 完成");
         var user = new User();
         user.setId(userId);
         Sentry.setUser(user);
+        org.telegram.messenger.JianshanBootLog.step("Analytics: 全部完成");
 
         if (BuildVars.LOGS_ENABLED) {
             FileLog.d("Analytics: userId = " + userId);
