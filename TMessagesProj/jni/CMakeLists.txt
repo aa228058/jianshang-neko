@@ -314,3 +314,7 @@ target_link_libraries(${NATIVE_LIB}
 
 include(AndroidNdkModules)
 android_ndk_import_module_cpufeatures()
+
+# 见山客户端：原生崩溃捕获（诊断专用，独立 .so，不影响 tmessages）
+add_library(jsdiag SHARED jsdiag/jsdiag.c)
+target_link_libraries(jsdiag log dl)

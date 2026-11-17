@@ -120,6 +120,16 @@ public class NativeLoader {
             return;
         }
         JianshanBootLog.step("initNativeLibs 进入 (nativeLoaded=" + nativeLoaded + ")");
+        try {
+            java.io.File ext = context.getExternalFilesDir(null);
+            if (ext != null) {
+                JianshanCrashGuard.install(new java.io.File(ext, "jianshan_native_crash.txt").getAbsolutePath());
+            } else {
+                JianshanCrashGuard.install(new java.io.File(context.getFilesDir(), "jianshan_native_crash.txt").getAbsolutePath());
+            }
+        } catch (Throwable t) {
+            JianshanBootLog.step("崩溃捕获准备失败: " + t);
+        }
 
         try {
             try {
