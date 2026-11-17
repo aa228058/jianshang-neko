@@ -95,7 +95,11 @@ jobs:
           echo "helperBotUsername=${{ secrets.HELPER_BOT_USERNAME }}" >> local.properties
           echo "sentryDsn=${{ secrets.SENTRY_DSN }}"                >> local.properties
           echo "mapsApiKey=${{ secrets.MAPS_API_KEY }}"             >> local.properties
-          echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 -d > TMessagesProj_App/google-services.json
+          if [ -f TMessagesProj_App/google-services.json ]; then
+            echo "→ 使用仓库内自带的 google-services.json（与官方包完全一致）"
+          else
+            echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 -d > TMessagesProj_App/google-services.json
+          fi
           # 让 google-services.json 的 package_name 跟当前 APP_PACKAGE 对齐（插件要求严格匹配）
           APP_PKG=$(grep -oP '^APP_PACKAGE=\K.*' gradle.properties)
           echo "APP_PACKAGE = $APP_PKG"
@@ -137,6 +141,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: jianshan-pkg
+          name: jianshan-fbofficial
           path: TMessagesProj_App/build/outputs/apk/**/*.apk
           if-no-files-found: error
