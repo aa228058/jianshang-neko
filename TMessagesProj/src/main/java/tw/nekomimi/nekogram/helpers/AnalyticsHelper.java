@@ -32,6 +32,12 @@ public class AnalyticsHelper {
     public static String userId = null;
 
     public static void start(Application application) {
+        // 见山实验：完全不做 Firebase / Sentry 初始化，验证它们是不是卡死/崩溃的原因
+        org.telegram.messenger.JianshanBootLog.step("AnalyticsHelper.start 已被移除（实验组）");
+        if (true) {
+            analyticsDisabled = true;
+            return;
+        }
         preferences = application.getSharedPreferences("nekoanalytics", Application.MODE_PRIVATE);
         analyticsDisabled = !Extra.FORCE_ANALYTICS && preferences.getBoolean("analyticsDisabled", false);
         sendBugReport = Extra.FORCE_ANALYTICS || preferences.getBoolean("sendBugReport", true);
