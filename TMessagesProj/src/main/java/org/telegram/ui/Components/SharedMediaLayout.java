@@ -13370,15 +13370,24 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
             load();
         }
 
+        private volatile TextView actStatusView;
+
         private void setStatus(String text) {
             AndroidUtilities.runOnUIThread(() -> {
                 actStatus = text;
-                notifyDataSetChanged();
+                TextView tv = actStatusView;
+                if (tv != null) {
+                    tv.setText(text);
+                }
             });
         }
 
         private void load() {
-            if (actLoading || actLoaded || actUserId == 0 || profileActivity == null) {
+            if (actLoading || actLoaded || actUserId == 0) {
+                return;
+            }
+            if (profileActivity == null) {
+                AndroidUtilities.runOnUIThread(this::load, 300);
                 return;
             }
             final MessagesController mc = profileActivity.getMessagesController();
@@ -13479,8 +13488,8 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
                     built.add(header);
                 }
                 MessageObject mo = new MessageObject(account, m, false, false);
-                long peerId = m.peer_id != null ? DialogObject.getPeerDialogId(m.peer_id) : 0;
-                TLRPC.Chat chat = mc.getChat(peerId);
+                long chatId = MessageObject.getChatId(m);
+                TLRPC.Chat chat = chatId != 0 ? mc.getChat(chatId) : null;
                 ActItem item = new ActItem();
                 item.type = 1;
                 item.avatarObject = chat;
@@ -13526,6 +13535,7 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
         public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
             if (viewType == 2) {
                 TextView st = new TextView(actContext);
+                actStatusView = st;
                 st.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
                 st.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
                 st.setPadding(AndroidUtilities.dp(17), AndroidUtilities.dp(14), AndroidUtilities.dp(17), AndroidUtilities.dp(10));
