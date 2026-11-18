@@ -4,21 +4,16 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- 见山：远山 -->
+    <!-- 见山：白描山脊 -->
     <path
-        android:fillColor="#FFFFFF"
-        android:fillAlpha="0.45"
-        android:pathData="M12.6,84.4 L45.3,34.8 L78,84.4 Z" />
-    <!-- 见山：主峰 -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M34.8,86.5 L67.5,40.1 L100.2,86.5 Z" />
-    <!-- 雪顶 -->
-    <path
-        android:fillColor="#D7ECFF"
-        android:pathData="M59.7,50.6 L67.5,40.1 L75.3,50.6 L67.5,55.6 Z" />
+        android:pathData="M26,78 L45,47 L54,60 L62,50 L82,78"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
     <!-- 日 -->
     <path
-        android:fillColor="#FFD68C"
-        android:pathData="M29,21.1 m-5.8,0 a5.8,5.8 0 1,0 11.6,0 a5.8,5.8 0 1,0 -11.6,0" />
+        android:fillColor="#FFCD82"
+        android:pathData="M70,33 m-3.6,0 a3.6,3.6 0 1,0 7.2,0 a3.6,3.6 0 1,0 -7.2,0" />
 </vector>
