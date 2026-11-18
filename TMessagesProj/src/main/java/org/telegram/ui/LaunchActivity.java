@@ -412,6 +412,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        org.telegram.messenger.JianshanBootLog.step("LaunchActivity.onCreate 进入");
         isActive = true;
         activeInstanceCount++;
         if (BuildVars.DEBUG_VERSION) {
@@ -425,7 +426,10 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         }
 
         instance = this;
+        org.telegram.messenger.JianshanBootLog.step("postInitApplication 之前");
         ApplicationLoader.postInitApplication();
+        org.telegram.messenger.JianshanBootLog.step("postInitApplication 完成");
+        org.telegram.messenger.JianshanBootLog.step("isClientActivated=" + UserConfig.getInstance(UserConfig.selectedAccount).isClientActivated());
         AndroidUtilities.checkDisplaySize(this, getResources().getConfiguration());
         currentAccount = UserConfig.selectedAccount;
         if (BuildVars.DEBUG_VERSION || BuildVars.DEBUG_PRIVATE_VERSION) {
@@ -463,7 +467,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         flagSecureReason = new FlagSecureReason(getWindow(), () -> SharedConfig.passcodeHash.length() > 0 && !SharedConfig.allowScreenCapture);
         flagSecureReason.attach();
 
+        org.telegram.messenger.JianshanBootLog.step("LaunchActivity super.onCreate 之前");
         super.onCreate(savedInstanceState);
+        org.telegram.messenger.JianshanBootLog.step("LaunchActivity super.onCreate 完成");
         if (Build.VERSION.SDK_INT >= 24) {
             AndroidUtilities.isInMultiwindow = isInMultiWindowMode();
         }
@@ -478,7 +484,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         frameLayout = new ActivityContentLayout(this);
         frameLayout.setClipToPadding(false);
         frameLayout.setClipChildren(false);
+        org.telegram.messenger.JianshanBootLog.step("setContentView 之前");
         setContentView(frameLayout);
+        org.telegram.messenger.JianshanBootLog.step("setContentView 完成");
         rootAnimatedInsetsListener = new WindowAnimatedInsetsProvider(frameLayout);
         PipCoordinator.getInstance().onActivityCreate(this, createActivityVisibilityController(false));
 
