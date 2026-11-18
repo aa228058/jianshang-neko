@@ -1,5 +1,6 @@
 package org.telegram.ui.Components;
 
+import java.util.Date;
 import static org.telegram.messenger.AndroidUtilities.dp;
 import org.telegram.utils.glass.BaseFragmentSimpleGlass;
 import static org.telegram.messenger.AndroidUtilities.dpf2;
@@ -208,6 +209,7 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
     public static final int TAB_BOT_PREVIEWS = 13;
     public static final int TAB_GIFTS = 14;
     public static final int TAB_POLL = 15;
+    public static final int TAB_ACTIVITIES = 16;   // 见山：活动
     private static final int TAB_STORIES_ALBUM_PREFIX = 0x00010000;
     private static final int TAB_STORIES_ALBUM_MASK = 0x0000FFFF;
 
@@ -742,6 +744,7 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
     private PollAdapter pollAdapter;
     private GifAdapter gifAdapter;
     private CommonGroupsAdapter commonGroupsAdapter;
+    private ActivitiesAdapter activitiesAdapter;
     private ChannelRecommendationsAdapter channelRecommendationsAdapter;
     private SavedDialogsAdapter savedDialogsAdapter;
     private SavedMessagesSearchAdapter savedMessagesSearchAdapter;
@@ -2086,6 +2089,7 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
         linksSearchAdapter = new MediaSearchAdapter(context, 3);
         groupUsersSearchAdapter = new GroupUsersSearchAdapter(context);
         commonGroupsAdapter = new CommonGroupsAdapter(context);
+        activitiesAdapter = new ActivitiesAdapter(context);
         channelRecommendationsAdapter = new ChannelRecommendationsAdapter(context);
         savedDialogsAdapter = new SavedDialogsAdapter(context);
         savedMessagesSearchAdapter = new SavedMessagesSearchAdapter(context);
@@ -6919,6 +6923,12 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
                 if (hasMedia[6] > 0) {
                     tabs.add(new Pair(TAB_COMMON_GROUPS, getString(R.string.SharedGroupsTab2)));
                 }
+                if (dialog_id > 0) {
+                    TLRPC.User actUser = profileActivity.getMessagesController().getUser(dialog_id);
+                    if (actUser != null && !actUser.bot && !actUser.self && !actUser.deleted) {
+                        tabs.add(new Pair(TAB_ACTIVITIES, "活动"));
+                    }
+                }
                 if (hasRecommendations) {
                     tabs.add(new Pair(TAB_RECOMMENDED_CHANNELS, getString(dialog_id > 0 ? R.string.SimilarBotsTab : R.string.SimilarChannelsTab)));
                 }
@@ -7206,6 +7216,13 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
                 if (currentAdapter != commonGroupsAdapter) {
                     recycleAdapter(currentAdapter);
                     mediaPages[a].listView.setAdapter(commonGroupsAdapter);
+                }
+            } else if (mediaPages[a].selectedType == TAB_ACTIVITIES) {
+                sections = false;
+                if (currentAdapter != activitiesAdapter) {
+                    recycleAdapter(currentAdapter);
+                    activitiesAdapter.setUser(dialog_id);
+                    mediaPages[a].listView.setAdapter(activitiesAdapter);
                 }
             } else if (mediaPages[a].selectedType == TAB_GROUPUSERS) {
                 sections = true;
@@ -13274,4 +13291,266 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
         colors.add(Theme.key_chat_mediaTimeText);
         colors.add(Theme.key_chat_mediaTimeBackground);
     }
+
+
+    // ═══════════ 见山客户端 · 活动 tab ═══════════
+    // 数据源：先取「共同群」（messages.getCommonChats），再对每个群按 from_id 搜消息
+    // （messages.search），按日期分组展示。全部走客户端自己的 RPC 通道。
+
+    private static class ActItem {
+        int type;               // 0 = 日期头, 1 = 消息行
+        String title;
+        String subtitle;
+        String time;
+        Object avatarObject;    // TLRPC.Chat 或 TLRPC.User
+    }
+
+    private static class ActHolder {
+        BackupImageView avatar;
+        TextView title;
+        TextView text;
+        TextView time;
+
+        ActHolder(BackupImageView avatar, TextView title, TextView text, TextView time) {
+            this.avatar = avatar;
+            this.title = title;
+            this.text = text;
+            this.time = time;
+        }
+    }
+
+    private class ActivitiesAdapter extends RecyclerListView.SelectionAdapter {
+
+        private final Context actContext;
+        private final ArrayList<ActItem> actItems = new ArrayList<>();
+        private boolean actLoading;
+        private boolean actLoaded;
+        private long actUserId;
+        private int actReqId;
+
+        ActivitiesAdapter(Context context) {
+            actContext = context;
+        }
+
+        void setUser(long userId) {
+            if (actLoaded && actUserId == userId) {
+                return;
+            }
+            actUserId = userId;
+            actLoaded = false;
+            actLoading = false;
+            actItems.clear();
+            notifyDataSetChanged();
+            load();
+        }
+
+        void reload() {
+            actLoaded = false;
+            actLoading = false;
+            actItems.clear();
+            notifyDataSetChanged();
+            load();
+        }
+
+        private void load() {
+            if (actLoading || actLoaded || actUserId == 0 || profileActivity == null) {
+                return;
+            }
+            final MessagesController mc = profileActivity.getMessagesController();
+            TLRPC.InputUser inputUser = mc.getInputUser(actUserId);
+            if (inputUser instanceof TLRPC.TL_inputUserEmpty) {
+                return;
+            }
+            actLoading = true;
+            TLRPC.TL_messages_getCommonChats req = new TLRPC.TL_messages_getCommonChats();
+            req.user_id = inputUser;
+            req.limit = 100;
+            actReqId = profileActivity.getConnectionsManager().sendRequest(req, (response, error) -> {
+                if (error != null || !(response instanceof TLRPC.messages_Chats)) {
+                    AndroidUtilities.runOnUIThread(() -> {
+                        actLoading = false;
+                        actLoaded = true;
+                        notifyDataSetChanged();
+                    });
+                    return;
+                }
+                TLRPC.messages_Chats res = (TLRPC.messages_Chats) response;
+                mc.putChats(res.chats, false);
+                ArrayList<Long> peers = new ArrayList<>();
+                for (int i = 0; i < res.chats.size() && peers.size() < 15; i++) {
+                    TLRPC.Chat chat = res.chats.get(i);
+                    if (chat == null || ChatObject.isNotInChat(chat)) {
+                        continue;
+                    }
+                    peers.add(-chat.id);
+                }
+                fetchFromChats(peers);
+            });
+            profileActivity.getConnectionsManager().bindRequestToGuid(actReqId, profileActivity.getClassGuid());
+        }
+
+        private void fetchFromChats(final ArrayList<Long> peers) {
+            final int account = profileActivity.getCurrentAccount();
+            final ArrayList<TLRPC.Message> collected = new ArrayList<>();
+            if (peers.isEmpty()) {
+                finish(collected, account);
+                return;
+            }
+            final int[] left = {peers.size()};
+            final MessagesController mc = profileActivity.getMessagesController();
+            for (int k = 0; k < peers.size(); k++) {
+                TLRPC.TL_messages_search sreq = new TLRPC.TL_messages_search();
+                sreq.peer = mc.getInputPeer(peers.get(k));
+                sreq.from_id = mc.getInputPeer(actUserId);
+                sreq.filter = new TLRPC.TL_inputMessagesFilterEmpty();
+                sreq.q = "";
+                sreq.limit = 20;
+                profileActivity.getConnectionsManager().sendRequest(sreq, (response, error) -> {
+                    synchronized (collected) {
+                        if (error == null && response instanceof TLRPC.messages_Messages) {
+                            TLRPC.messages_Messages mres = (TLRPC.messages_Messages) response;
+                            mc.putUsers(mres.users, false);
+                            mc.putChats(mres.chats, false);
+                            collected.addAll(mres.messages);
+                        }
+                        left[0]--;
+                        if (left[0] == 0) {
+                            finish(collected, account);
+                        }
+                    }
+                });
+            }
+        }
+
+        private void finish(ArrayList<TLRPC.Message> messages, int account) {
+            ArrayList<TLRPC.Message> copy;
+            synchronized (messages) {
+                copy = new ArrayList<>(messages);
+            }
+            Collections.sort(copy, (a, b) -> Integer.compare(b.date, a.date));
+            final MessagesController mc = MessagesController.getInstance(account);
+            final ArrayList<ActItem> built = new ArrayList<>();
+            int lastDay = -1;
+            for (int i = 0; i < copy.size(); i++) {
+                TLRPC.Message m = copy.get(i);
+                int day = (int) (m.date / 86400);
+                if (day != lastDay) {
+                    lastDay = day;
+                    ActItem header = new ActItem();
+                    header.type = 0;
+                    header.title = LocaleController.stringForMessageListDate(m.date);
+                    built.add(header);
+                }
+                MessageObject mo = new MessageObject(account, m, false, false);
+                long peerId = m.peer_id != null ? DialogObject.getPeerDialogId(m.peer_id) : 0;
+                TLRPC.Chat chat = mc.getChat(peerId);
+                ActItem item = new ActItem();
+                item.type = 1;
+                item.avatarObject = chat;
+                item.title = chat != null ? chat.title : "群组";
+                CharSequence txt = mo.messageText;
+                item.subtitle = txt == null ? "" : txt.toString().replace('\n', ' ');
+                item.time = android.text.format.DateFormat.getTimeFormat(actContext)
+                        .format(new Date((long) m.date * 1000L));
+                built.add(item);
+            }
+            AndroidUtilities.runOnUIThread(() -> {
+                actItems.clear();
+                actItems.addAll(built);
+                actLoading = false;
+                actLoaded = true;
+                notifyDataSetChanged();
+            });
+        }
+
+        @Override
+        public boolean isEnabled(RecyclerView.ViewHolder holder) {
+            return holder.getItemViewType() == 1;
+        }
+
+        @Override
+        public int getItemCount() {
+            return actItems.size();
+        }
+
+        @Override
+        public int getItemViewType(int position) {
+            return actItems.get(position).type;
+        }
+
+        @Override
+        public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+            if (viewType == 0) {
+                TextView tv = new TextView(actContext);
+                tv.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+                tv.setTypeface(AndroidUtilities.bold());
+                tv.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2));
+                tv.setPadding(AndroidUtilities.dp(17), AndroidUtilities.dp(12), AndroidUtilities.dp(17), AndroidUtilities.dp(6));
+                return new RecyclerListView.Holder(tv);
+            }
+            LinearLayout row = new LinearLayout(actContext);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(AndroidUtilities.dp(17), AndroidUtilities.dp(9), AndroidUtilities.dp(17), AndroidUtilities.dp(9));
+            row.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), 2));
+
+            BackupImageView avatar = new BackupImageView(actContext);
+            avatar.setRoundRadius(AndroidUtilities.dp(20));
+            LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(AndroidUtilities.dp(40), AndroidUtilities.dp(40));
+            alp.rightMargin = AndroidUtilities.dp(12);
+            row.addView(avatar, alp);
+
+            LinearLayout texts = new LinearLayout(actContext);
+            texts.setOrientation(LinearLayout.VERTICAL);
+            TextView title = new TextView(actContext);
+            title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+            title.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            title.setMaxLines(1);
+            title.setEllipsize(TextUtils.TruncateAt.END);
+            TextView text = new TextView(actContext);
+            text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+            text.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2));
+            text.setMaxLines(1);
+            text.setEllipsize(TextUtils.TruncateAt.END);
+            texts.addView(title);
+            texts.addView(text);
+            row.addView(texts, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+            TextView time = new TextView(actContext);
+            time.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
+            time.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2));
+            LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            tlp.leftMargin = AndroidUtilities.dp(10);
+            row.addView(time, tlp);
+
+            row.setTag(new ActHolder(avatar, title, text, time));
+            return new RecyclerListView.Holder(row);
+        }
+
+        @Override
+        public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
+            ActItem item = actItems.get(position);
+            if (item.type == 0) {
+                ((TextView) holder.itemView).setText(item.title);
+                return;
+            }
+            ActHolder h = (ActHolder) holder.itemView.getTag();
+            h.title.setText(item.title);
+            h.text.setText(item.subtitle);
+            h.time.setText(item.time);
+            AvatarDrawable avatarDrawable = new AvatarDrawable();
+            if (item.avatarObject instanceof TLRPC.Chat) {
+                TLRPC.Chat chat = (TLRPC.Chat) item.avatarObject;
+                avatarDrawable.setInfo(chat);
+                h.avatar.setForUserOrChat(chat, avatarDrawable);
+            } else if (item.avatarObject instanceof TLRPC.User) {
+                TLRPC.User user = (TLRPC.User) item.avatarObject;
+                avatarDrawable.setInfo(user);
+                h.avatar.setForUserOrChat(user, avatarDrawable);
+            } else {
+                h.avatar.setImageDrawable(null);
+            }
+        }
+    }
+
 }
