@@ -13343,6 +13343,7 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
         private boolean actLoaded;
         private long actUserId;
         private int actReqId;
+        private String actStatus = "正在准备…";
 
         ActivitiesAdapter(Context context) {
             actContext = context;
@@ -13364,8 +13365,16 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
             actLoaded = false;
             actLoading = false;
             actItems.clear();
+            actStatus = "正在准备…";
             notifyDataSetChanged();
             load();
+        }
+
+        private void setStatus(String text) {
+            AndroidUtilities.runOnUIThread(() -> {
+                actStatus = text;
+                notifyDataSetChanged();
+            });
         }
 
         private void load() {
@@ -13375,19 +13384,30 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
             final MessagesController mc = profileActivity.getMessagesController();
             TLRPC.InputUser inputUser = mc.getInputUser(actUserId);
             if (inputUser instanceof TLRPC.TL_inputUserEmpty) {
+                // 用户信息还没就绪（access_hash 未拉到），先补全再重试
+                setStatus("用户信息未就绪，正在加载…");
+                TLRPC.User u = mc.getUser(actUserId);
+                if (u != null) {
+                    mc.loadFullUser(u, profileActivity.getClassGuid(), true);
+                }
+                actLoaded = false;
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (!actLoading && !actLoaded) {
+                        load();
+                    }
+                }, 1500);
                 return;
             }
             actLoading = true;
+            setStatus("正在获取共同群组…");
             TLRPC.TL_messages_getCommonChats req = new TLRPC.TL_messages_getCommonChats();
             req.user_id = inputUser;
             req.limit = 100;
             actReqId = profileActivity.getConnectionsManager().sendRequest(req, (response, error) -> {
                 if (error != null || !(response instanceof TLRPC.messages_Chats)) {
-                    AndroidUtilities.runOnUIThread(() -> {
-                        actLoading = false;
-                        actLoaded = true;
-                        notifyDataSetChanged();
-                    });
+                    actLoading = false;
+                    actLoaded = true;
+                    setStatus("加载失败：" + (error != null ? error.text : "无响应"));
                     return;
                 }
                 TLRPC.messages_Chats res = (TLRPC.messages_Chats) response;
@@ -13400,6 +13420,7 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
                     }
                     peers.add(-chat.id);
                 }
+                setStatus("共同群组 " + peers.size() + " 个，正在拉取消息…");
                 fetchFromChats(peers);
             });
             profileActivity.getConnectionsManager().bindRequestToGuid(actReqId, profileActivity.getClassGuid());
@@ -13470,11 +13491,15 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
                         .format(new Date((long) m.date * 1000L));
                 built.add(item);
             }
+            final int total = built.size();
             AndroidUtilities.runOnUIThread(() -> {
                 actItems.clear();
                 actItems.addAll(built);
                 actLoading = false;
                 actLoaded = true;
+                actStatus = total == 0
+                        ? "没有找到 TA 在共同群组里的消息（可能没有共同群组，或消息太旧）"
+                        : "共 " + total + " 条";
                 notifyDataSetChanged();
             });
         }
@@ -13486,16 +13511,26 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
 
         @Override
         public int getItemCount() {
-            return actItems.size();
+            return actItems.size() + 1;
         }
 
         @Override
         public int getItemViewType(int position) {
-            return actItems.get(position).type;
+            if (position == 0) {
+                return 2;   // 状态行
+            }
+            return actItems.get(position - 1).type;
         }
 
         @Override
         public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+            if (viewType == 2) {
+                TextView st = new TextView(actContext);
+                st.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+                st.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+                st.setPadding(AndroidUtilities.dp(17), AndroidUtilities.dp(14), AndroidUtilities.dp(17), AndroidUtilities.dp(10));
+                return new RecyclerListView.Holder(st);
+            }
             if (viewType == 0) {
                 TextView tv = new TextView(actContext);
                 tv.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
@@ -13545,7 +13580,11 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
 
         @Override
         public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
-            ActItem item = actItems.get(position);
+            if (position == 0) {
+                ((TextView) holder.itemView).setText(actStatus);
+                return;
+            }
+            ActItem item = actItems.get(position - 1);
             if (item.type == 0) {
                 ((TextView) holder.itemView).setText(item.title);
                 return;
