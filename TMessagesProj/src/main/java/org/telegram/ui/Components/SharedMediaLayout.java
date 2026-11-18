@@ -6756,6 +6756,16 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
     private boolean wasReordering;
     private int firstTab = -1;
     public void updateTabs(boolean animated) {
+        // 见山：活动 tab 是自定义页，tab 条重建时可能触发旧代码里对媒体类型数组的假设，
+        // 这里兜一层，异常写进 FileLog，但不让 App 崩掉。
+        try {
+            updateTabsImpl(animated);
+        } catch (Throwable t) {
+            FileLog.e(t);
+        }
+    }
+
+    private void updateTabsImpl(boolean animated) {
         if (scrollSlidingTextTabStrip == null) {
             return;
         }
