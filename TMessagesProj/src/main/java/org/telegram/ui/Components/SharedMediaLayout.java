@@ -1,5 +1,7 @@
 package org.telegram.ui.Components;
 
+import android.graphics.Path;
+import android.view.animation.LinearInterpolator;
 import java.util.Date;
 import static org.telegram.messenger.AndroidUtilities.dp;
 import org.telegram.utils.glass.BaseFragmentSimpleGlass;
@@ -6952,6 +6954,14 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
                 if (hasRecommendations) {
                     tabs.add(new Pair(TAB_RECOMMENDED_CHANNELS, getString(dialog_id > 0 ? R.string.SimilarBotsTab : R.string.SimilarChannelsTab)));
                 }
+                // 见山：把「活动」放到 tab 最前面（跟 Nicegram 一致）
+                for (int i = 0; i < tabs.size(); i++) {
+                    if (tabs.get(i).first == TAB_ACTIVITIES) {
+                        Pair<Integer, CharSequence> actTab = tabs.remove(i);
+                        tabs.add(0, actTab);
+                        break;
+                    }
+                }
             }
             if (scrollSlidingTextTabStrip.isReordering()) {
                 final Utilities.CallbackReturn<Integer, Boolean> has = id -> {
@@ -13313,18 +13323,18 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
     }
 
 
-    // ═══════════ 见山客户端 · 活动 tab ═══════════
-    // 数据源：先取「共同群」（messages.getCommonChats），再对每个群按 from_id 搜消息
-    // （messages.search），按日期分组展示。全部走客户端自己的 RPC 通道。
+    // ═══════════ 见山客户端 · 活动 tab（对齐 Nicegram 视觉） ═══════════
 
     private static class ActItem {
-        int type;               // 0 = 日期头, 1 = 消息行
+        int type;               // 0=日期头 1=消息行 2=状态行 3=刷新卡
         String title;
         String subtitle;
         String time;
-        Object avatarObject;    // TLRPC.Chat 或 TLRPC.User
-        long dialogId;          // 用于点击跳转
+        Object avatarObject;
+        long dialogId;
         int messageId;
+        boolean firstInGroup;
+        boolean lastInGroup;
     }
 
     private static class ActHolder {
@@ -13332,12 +13342,92 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
         TextView title;
         TextView text;
         TextView time;
+        View divider;
+        View card;
 
-        ActHolder(BackupImageView avatar, TextView title, TextView text, TextView time) {
+        ActHolder(View card, BackupImageView avatar, TextView title, TextView text, TextView time, View divider) {
+            this.card = card;
             this.avatar = avatar;
             this.title = title;
             this.text = text;
             this.time = time;
+            this.divider = divider;
+        }
+    }
+
+    private static class ActRefreshHolder {
+        TextView value;
+        RefreshIconView icon;
+
+        ActRefreshHolder(TextView value, RefreshIconView icon) {
+            this.value = value;
+            this.icon = icon;
+        }
+    }
+
+    /** Nicegram 那个圆形刷新箭头，自己画（release 里 R.drawable 可能被内联，不依赖资源）。 */
+    private static class RefreshIconView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF oval = new RectF();
+        private final Path arrow = new Path();
+        private final int color;
+        private boolean spinning;
+        private final Runnable spin = new Runnable() {
+            @Override
+            public void run() {
+                if (!spinning) {
+                    return;
+                }
+                animate().rotationBy(360f).setDuration(800).setInterpolator(new LinearInterpolator())
+                        .withEndAction(spin).start();
+            }
+        };
+
+        RefreshIconView(Context context, int color) {
+            super(context);
+            this.color = color;
+        }
+
+        void setSpinning(boolean value) {
+            if (spinning == value) {
+                return;
+            }
+            spinning = value;
+            animate().cancel();
+            setRotation(0f);
+            if (value) {
+                post(spin);
+            }
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            final int w = getWidth();
+            final int h = getHeight();
+            if (w <= 0 || h <= 0) {
+                return;
+            }
+            final float stroke = Math.max(1.5f, AndroidUtilities.dp(2f));
+            final float cx = w / 2f;
+            final float cy = h / 2f;
+            final float r = Math.min(w, h) / 2f - stroke * 1.7f;
+            paint.setColor(color);
+            paint.setStrokeWidth(stroke);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            oval.set(cx - r, cy - r, cx + r, cy + r);
+            canvas.drawArc(oval, -62f, 292f, false, paint);
+            final float ang = (float) Math.toRadians(-62f);
+            final float ax = cx + r * (float) Math.cos(ang);
+            final float ay = cy + r * (float) Math.sin(ang);
+            final float sz = stroke * 2.0f;
+            paint.setStyle(Paint.Style.FILL);
+            arrow.reset();
+            arrow.moveTo(ax + sz * 0.55f, ay - sz);
+            arrow.lineTo(ax - sz * 0.75f, ay + sz * 0.15f);
+            arrow.lineTo(ax + sz * 0.15f, ay + sz * 0.75f);
+            arrow.close();
+            canvas.drawPath(arrow, paint);
         }
     }
 
@@ -13366,6 +13456,7 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
             actLoaded = false;
             actLoading = false;
             actItems.clear();
+            actStatus = "正在准备…";
             notifyDataSetChanged();
             load();
         }
@@ -13374,21 +13465,36 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
             actLoaded = false;
             actLoading = false;
             actItems.clear();
-            actStatus = "正在准备…";
+            actStatus = "正在刷新…";
+            actLastUpdate = 0;
             notifyDataSetChanged();
             load();
         }
 
-        private volatile TextView actStatusView;
-
         private void setStatus(String text) {
-            AndroidUtilities.runOnUIThread(() -> {
-                actStatus = text;
-                TextView tv = actStatusView;
-                if (tv != null) {
-                    tv.setText(text);
-                }
-            });
+            actStatus = text;
+            AndroidUtilities.runOnUIThread(() -> notifyDataSetChanged());
+        }
+
+        private int itemsOffset() {
+            return actItems.isEmpty() ? 2 : 1;
+        }
+
+        private ActItem itemAt(int position) {
+            int offset = itemsOffset();
+            if (position < offset) {
+                return null;
+            }
+            int i = position - offset;
+            return i >= 0 && i < actItems.size() ? actItems.get(i) : null;
+        }
+
+        private String lastUpdateText() {
+            if (actLastUpdate == 0) {
+                return "—";
+            }
+            return android.text.format.DateFormat.getTimeFormat(actContext)
+                    .format(new Date(actLastUpdate));
         }
 
         private void load() {
@@ -13402,7 +13508,6 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
             final MessagesController mc = profileActivity.getMessagesController();
             TLRPC.InputUser inputUser = mc.getInputUser(actUserId);
             if (inputUser instanceof TLRPC.TL_inputUserEmpty) {
-                // 用户信息还没就绪（access_hash 未拉到），先补全再重试
                 setStatus("用户信息未就绪，正在加载…");
                 TLRPC.User u = mc.getUser(actUserId);
                 if (u != null) {
@@ -13493,8 +13598,7 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
                     lastDay = day;
                     ActItem header = new ActItem();
                     header.type = 0;
-                    header.title = android.text.format.DateFormat.getDateFormat(actContext)
-                            .format(new Date((long) m.date * 1000L));
+                    header.title = LocaleController.stringForMessageListDate(m.date);
                     built.add(header);
                 }
                 MessageObject mo = new MessageObject(account, m, false, false);
@@ -13512,7 +13616,16 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
                 item.messageId = m.id;
                 built.add(item);
             }
-            final int total = built.size();
+            // 标记组内首/尾，用于圆角与分割线
+            for (int i = 0; i < built.size(); i++) {
+                ActItem it = built.get(i);
+                if (it.type != 1) {
+                    continue;
+                }
+                it.firstInGroup = i == 0 || built.get(i - 1).type != 1;
+                it.lastInGroup = i == built.size() - 1 || built.get(i + 1).type != 1;
+            }
+            final int total = countMessages(built);
             AndroidUtilities.runOnUIThread(() -> {
                 actItems.clear();
                 actItems.addAll(built);
@@ -13526,6 +13639,16 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
             });
         }
 
+        private int countMessages(ArrayList<ActItem> list) {
+            int n = 0;
+            for (ActItem it : list) {
+                if (it.type == 1) {
+                    n++;
+                }
+            }
+            return n;
+        }
+
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
             return holder.getItemViewType() == 1;
@@ -13533,26 +13656,67 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
 
         @Override
         public int getItemCount() {
-            return actItems.size() + 1;
+            return 1 + (actItems.isEmpty() ? 1 : 0) + actItems.size();
         }
 
         @Override
         public int getItemViewType(int position) {
             if (position == 0) {
-                return 2;   // 状态行
+                return 3;
             }
-            return actItems.get(position - 1).type;
+            ActItem item = itemAt(position);
+            return item == null ? 2 : item.type;
         }
 
         @Override
         public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+            if (viewType == 3) {
+                FrameLayout outer = new FrameLayout(actContext);
+                outer.setPadding(AndroidUtilities.dp(9), AndroidUtilities.dp(12), AndroidUtilities.dp(9), AndroidUtilities.dp(2));
+
+                LinearLayout card = new LinearLayout(actContext);
+                card.setOrientation(LinearLayout.HORIZONTAL);
+                card.setGravity(Gravity.CENTER_VERTICAL);
+                card.setPadding(AndroidUtilities.dp(14), AndroidUtilities.dp(10), AndroidUtilities.dp(12), AndroidUtilities.dp(10));
+                GradientDrawable bg = new GradientDrawable();
+                bg.setColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                bg.setCornerRadius(AndroidUtilities.dp(12));
+                card.setBackground(bg);
+
+                LinearLayout column = new LinearLayout(actContext);
+                column.setOrientation(LinearLayout.VERTICAL);
+                TextView label = new TextView(actContext);
+                label.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+                label.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+                label.setText("最后更新");
+                TextView value = new TextView(actContext);
+                value.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+                value.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
+                value.setText("—");
+                column.addView(label, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+                column.addView(value, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+                card.addView(column, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+                View divider = new View(actContext);
+                divider.setBackgroundColor(Theme.getColor(Theme.key_divider));
+                LinearLayout.LayoutParams dividerLp = new LinearLayout.LayoutParams(Math.max(1, AndroidUtilities.dp(1)), AndroidUtilities.dp(26));
+                dividerLp.rightMargin = AndroidUtilities.dp(12);
+                card.addView(divider, dividerLp);
+
+                RefreshIconView icon = new RefreshIconView(actContext, Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
+                LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(AndroidUtilities.dp(22), AndroidUtilities.dp(22));
+                card.addView(icon, iconLp);
+                icon.setOnClickListener(v -> reload());
+
+                outer.addView(card, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+                outer.setTag(new ActRefreshHolder(value, icon));
+                return new RecyclerListView.Holder(outer);
+            }
             if (viewType == 2) {
                 TextView st = new TextView(actContext);
-                actStatusView = st;
-                st.setOnClickListener(v -> reload());
                 st.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
                 st.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
-                st.setPadding(AndroidUtilities.dp(17), AndroidUtilities.dp(14), AndroidUtilities.dp(17), AndroidUtilities.dp(10));
+                st.setPadding(AndroidUtilities.dp(17), AndroidUtilities.dp(12), AndroidUtilities.dp(17), AndroidUtilities.dp(12));
                 return new RecyclerListView.Holder(st);
             }
             if (viewType == 0) {
@@ -13560,19 +13724,26 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
                 tv.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
                 tv.setTypeface(AndroidUtilities.bold());
                 tv.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2));
-                tv.setPadding(AndroidUtilities.dp(17), AndroidUtilities.dp(12), AndroidUtilities.dp(17), AndroidUtilities.dp(6));
+                tv.setPadding(AndroidUtilities.dp(17), AndroidUtilities.dp(14), AndroidUtilities.dp(17), AndroidUtilities.dp(6));
                 return new RecyclerListView.Holder(tv);
             }
+
+            // 消息行：外面一层留 9dp 边距，里面是白色圆角卡片，行间加分割线
+            FrameLayout outer = new FrameLayout(actContext);
+            outer.setPadding(AndroidUtilities.dp(9), 0, AndroidUtilities.dp(9), 0);
+
+            LinearLayout card = new LinearLayout(actContext);
+            card.setOrientation(LinearLayout.VERTICAL);
+
             LinearLayout row = new LinearLayout(actContext);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(AndroidUtilities.dp(17), AndroidUtilities.dp(9), AndroidUtilities.dp(17), AndroidUtilities.dp(9));
-            row.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), 2));
+            row.setPadding(AndroidUtilities.dp(12), AndroidUtilities.dp(9), AndroidUtilities.dp(12), AndroidUtilities.dp(9));
 
             BackupImageView avatar = new BackupImageView(actContext);
             avatar.setRoundRadius(AndroidUtilities.dp(20));
             LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(AndroidUtilities.dp(40), AndroidUtilities.dp(40));
-            alp.rightMargin = AndroidUtilities.dp(12);
+            alp.rightMargin = AndroidUtilities.dp(11);
             row.addView(avatar, alp);
 
             LinearLayout texts = new LinearLayout(actContext);
@@ -13595,25 +13766,67 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
             time.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
             time.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2));
             LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            tlp.leftMargin = AndroidUtilities.dp(10);
+            tlp.leftMargin = AndroidUtilities.dp(8);
             row.addView(time, tlp);
 
-            row.setTag(new ActHolder(avatar, title, text, time));
-            return new RecyclerListView.Holder(row);
+            View divider = new View(actContext);
+            divider.setBackgroundColor(Theme.getColor(Theme.key_divider));
+            LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, AndroidUtilities.dp(1)));
+            dlp.leftMargin = AndroidUtilities.dp(9 + 12 + 40 + 11);
+            dlp.rightMargin = AndroidUtilities.dp(9 + 12);
+            card.addView(row, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+            card.addView(divider, dlp);
+
+            outer.addView(card, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+            outer.setTag(new ActHolder(card, avatar, title, text, time, divider));
+            return new RecyclerListView.Holder(outer);
         }
 
         @Override
         public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
-            if (position == 0) {
+            int viewType = holder.getItemViewType();
+            if (viewType == 3) {
+                ActRefreshHolder h = (ActRefreshHolder) holder.itemView.getTag();
+                h.value.setText(lastUpdateText());
+                h.icon.setSpinning(actLoading);
+                return;
+            }
+            if (viewType == 2) {
                 ((TextView) holder.itemView).setText(actStatus);
                 return;
             }
-            ActItem item = actItems.get(position - 1);
+            ActItem item = itemAt(position);
+            if (item == null) {
+                return;
+            }
             if (item.type == 0) {
                 ((TextView) holder.itemView).setText(item.title);
                 return;
             }
             ActHolder h = (ActHolder) holder.itemView.getTag();
+            // 组内圆角
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+            float r = AndroidUtilities.dp(12);
+            float tl = item.firstInGroup ? r : 0;
+            float tr = item.firstInGroup ? r : 0;
+            float bl = item.lastInGroup ? r : 0;
+            float br = item.lastInGroup ? r : 0;
+            bg.setCornerRadii(new float[]{tl, tl, tr, tr, br, br, bl, bl});
+            h.card.setBackground(bg);
+            h.divider.setVisibility(item.lastInGroup ? View.GONE : View.VISIBLE);
+
+            h.title.setText(item.title);
+            h.text.setText(item.subtitle);
+            h.time.setText(item.time);
+            AvatarDrawable avatarDrawable = new AvatarDrawable();
+            if (item.avatarObject instanceof TLRPC.Chat) {
+                TLRPC.Chat chat = (TLRPC.Chat) item.avatarObject;
+                avatarDrawable.setInfo(chat);
+                h.avatar.setForUserOrChat(chat, avatarDrawable);
+            } else {
+                h.avatar.setImageDrawable(null);
+            }
             final ActItem clickItem = item;
             holder.itemView.setOnClickListener(v -> {
                 if (profileActivity == null || clickItem.dialogId == 0) {
@@ -13628,22 +13841,6 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
                 b.putInt("message_id", clickItem.messageId);
                 profileActivity.presentFragment(new ChatActivity(b));
             });
-            h.title.setText(item.title);
-            h.text.setText(item.subtitle);
-            h.time.setText(item.time);
-            AvatarDrawable avatarDrawable = new AvatarDrawable();
-            if (item.avatarObject instanceof TLRPC.Chat) {
-                TLRPC.Chat chat = (TLRPC.Chat) item.avatarObject;
-                avatarDrawable.setInfo(chat);
-                h.avatar.setForUserOrChat(chat, avatarDrawable);
-            } else if (item.avatarObject instanceof TLRPC.User) {
-                TLRPC.User user = (TLRPC.User) item.avatarObject;
-                avatarDrawable.setInfo(user);
-                h.avatar.setForUserOrChat(user, avatarDrawable);
-            } else {
-                h.avatar.setImageDrawable(null);
-            }
         }
     }
-
 }
