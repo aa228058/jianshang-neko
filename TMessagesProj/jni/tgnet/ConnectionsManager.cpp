@@ -18,6 +18,7 @@
 #include <openssl/sha.h>
 #include <zlib.h>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <cinttypes>
 #include "ConnectionsManager.h"
@@ -139,33 +140,27 @@ ConnectionsManager::~ConnectionsManager() {
 }
 
 ConnectionsManager& ConnectionsManager::getInstance(int32_t instanceNum) {
-    switch (instanceNum) {
-        case 0:
-            static ConnectionsManager instance0(0);
-            return instance0;
-        case 1:
-            static ConnectionsManager instance1(1);
-            return instance1;
-        case 2:
-            static ConnectionsManager instance2(2);
-            return instance2;
-        case 3:
-            static ConnectionsManager instance3(3);
-            return instance3;
-        case 4:
-            static ConnectionsManager instance4(4);
-            return instance4;
-        case 5:
-            static ConnectionsManager instance5(5);
-            return instance5;
-        case 6:
-            static ConnectionsManager instance6(6);
-            return instance6;
-        case 7:
-        default:
-            static ConnectionsManager instance7(7);
-            return instance7;
+    // ── 见山客户端：把"8 个写死的槽位"改成按 MAX_ACCOUNT_COUNT 动态建表 ──
+    // 上游这里是一个 switch(case 0..7, default → instance7)，
+    // 也就是说 8 号以后的账号全部**别名到 7 号实例**。
+    // 一别名，native 回调里带的账号号就乱了：Java 侧会拿到 7 号，
+    // 又去 init 8 号 → 再次触发回调 → 互相递归 → StackOverflowError
+    // （实测 MAX_ACCOUNT_COUNT>8 时，首次登录瞬间必崩，就是这个原因）。
+    // 这里改成每个槽位各自惰性创建，彻底消除别名。
+    if (instanceNum < 0) {
+        instanceNum = 0;
     }
+    if (instanceNum >= MAX_ACCOUNT_COUNT) {
+        instanceNum = MAX_ACCOUNT_COUNT - 1;
+    }
+    static std::mutex instancesMutex;
+    static ConnectionsManager *instances[MAX_ACCOUNT_COUNT] = {};
+    std::lock_guard<std::mutex> lock(instancesMutex);
+    ConnectionsManager *&cm = instances[instanceNum];
+    if (cm == nullptr) {
+        cm = new ConnectionsManager(instanceNum);
+    }
+    return *cm;
 }
 
 int ConnectionsManager::callEvents(int64_t now) {
