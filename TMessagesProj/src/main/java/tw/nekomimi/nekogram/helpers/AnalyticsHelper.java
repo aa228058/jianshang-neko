@@ -32,6 +32,11 @@ public class AnalyticsHelper {
     public static String userId = null;
 
     public static void start(Application application) {
+        // 见山 A/B：完全不初始化 Firebase / Sentry（排查登录后闪退）
+        analyticsDisabled = true;
+        if (true) {
+            return;
+        }
         preferences = application.getSharedPreferences("nekoanalytics", Application.MODE_PRIVATE);
         analyticsDisabled = !Extra.FORCE_ANALYTICS && preferences.getBoolean("analyticsDisabled", false);
         sendBugReport = Extra.FORCE_ANALYTICS || preferences.getBoolean("sendBugReport", true);
