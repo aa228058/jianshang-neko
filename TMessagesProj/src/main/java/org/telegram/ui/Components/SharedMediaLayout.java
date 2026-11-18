@@ -4682,7 +4682,8 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
             if (lastVisiblePosition + 1 >= profileActivity.getMessagesController().getSavedMessagesController().getLoadedCount()) {
                 profileActivity.getMessagesController().getSavedMessagesController().loadDialogs(false);
             }
-        } else if (mediaPage.selectedType != TAB_RECOMMENDED_CHANNELS && mediaPage.selectedType != TAB_SAVED_MESSAGES && mediaPage.selectedType != TAB_BOT_PREVIEWS && mediaPage.selectedType != TAB_GIFTS) {
+        } else if (mediaPage.selectedType != TAB_RECOMMENDED_CHANNELS && mediaPage.selectedType != TAB_SAVED_MESSAGES && mediaPage.selectedType != TAB_BOT_PREVIEWS && mediaPage.selectedType != TAB_GIFTS
+                && mediaPage.selectedType >= 0 && mediaPage.selectedType < sharedMediaData.length) {
             final int threshold;
             if (mediaPage.selectedType == 0) {
                 threshold = 3;
@@ -4753,6 +4754,9 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
     }
 
     private void loadFromStart(int selectedType) {
+        if (selectedType < 0 || selectedType >= sharedMediaData.length) {
+            return;   // 见山：活动 tab 等自定义页没有共享媒体数据
+        }
         int type;
         if (selectedType == 0) {
             type = MEDIA_PHOTOVIDEO;
