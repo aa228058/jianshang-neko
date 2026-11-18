@@ -4259,6 +4259,18 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
                 if (mediaPages[0].selectedType == id) {
                     return;
                 }
+                if (id == TAB_ACTIVITIES) {
+                    // 见山：活动页完全走自己的适配器，绝不进共享媒体的代码路径
+                    mediaPages[1].selectedType = id;
+                    mediaPages[1].setVisibility(View.VISIBLE);
+                    hideFloatingDateView(true);
+                    if (mediaPages[1].listView != null) {
+                        activitiesAdapter.setUser(dialog_id);
+                        mediaPages[1].listView.setAdapter(activitiesAdapter);
+                    }
+                    animatingForward = forward;
+                    return;
+                }
                 if (storiesContainer != null && id == TAB_STORIES) {
                     storiesContainer.selectTabWithId(0, 1f);
                 }
@@ -4498,6 +4510,10 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
 
 
     private boolean fillMediaData(int type) {
+        // 见山：活动 tab 等自定义页没有共享媒体数据，越界直接返回
+        if (type < 0 || type >= sharedMediaData.length) {
+            return false;
+        }
         SharedMediaData[] mediaData = sharedMediaPreloader.getSharedMediaData();
         if (mediaData == null) {
             return false;
