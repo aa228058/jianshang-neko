@@ -7032,17 +7032,6 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
     }
 
     private void switchToCurrentSelectedMode(boolean animated) {
-        // 见山：活动页是独立页面，不走共享媒体那套流程（否则会用 16 这个 tab id 去索引
-        // 只有 9 个元素的 sharedMediaData，直接 ArrayIndexOutOfBoundsException）
-        for (int a = 0; a < mediaPages.length; a++) {
-            if (mediaPages[a].selectedType == TAB_ACTIVITIES) {
-                if (mediaPages[a].listView != null && mediaPages[a].listView.getAdapter() != activitiesAdapter) {
-                    activitiesAdapter.setUser(dialog_id);
-                    mediaPages[a].listView.setAdapter(activitiesAdapter);
-                }
-                return;
-            }
-        }
         boolean sections = false;
         if (giftsContainer != null) {
             giftsContainer.resetReordering();
