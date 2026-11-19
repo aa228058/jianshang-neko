@@ -13338,6 +13338,7 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
         int messageId;
         boolean firstInGroup;
         boolean lastInGroup;
+        boolean showAvatar;
     }
 
     private static class ActHolder {
@@ -13594,11 +13595,13 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
             final MessagesController mc = MessagesController.getInstance(account);
             final ArrayList<ActItem> built = new ArrayList<>();
             int lastDay = -1;
+            final java.util.HashSet<Long> dayChats = new java.util.HashSet<>();
             for (int i = 0; i < copy.size(); i++) {
                 TLRPC.Message m = copy.get(i);
                 int day = (int) (m.date / 86400);
                 if (day != lastDay) {
                     lastDay = day;
+                    dayChats.clear();
                     ActItem header = new ActItem();
                     header.type = 0;
                     header.title = LocaleController.stringForMessageListDate(m.date);
@@ -13617,6 +13620,8 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
                         .format(new Date((long) m.date * 1000L));
                 item.dialogId = MessageObject.getDialogId(m);
                 item.messageId = m.id;
+                // Nice 的行为：同一天里，同一个群只显示一次头像
+                item.showAvatar = dayChats.add(chatId);
                 built.add(item);
             }
             // 标记组内首/尾，用于圆角与分割线
@@ -13744,8 +13749,8 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
             row.setPadding(AndroidUtilities.dp(12), AndroidUtilities.dp(9), AndroidUtilities.dp(12), AndroidUtilities.dp(9));
 
             BackupImageView avatar = new BackupImageView(actContext);
-            avatar.setRoundRadius(AndroidUtilities.dp(20));
-            LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(AndroidUtilities.dp(40), AndroidUtilities.dp(40));
+            avatar.setRoundRadius(AndroidUtilities.dp(15));
+            LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(AndroidUtilities.dp(30), AndroidUtilities.dp(30));
             alp.rightMargin = AndroidUtilities.dp(11);
             row.addView(avatar, alp);
 
@@ -13775,7 +13780,7 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
             View divider = new View(actContext);
             divider.setBackgroundColor(Theme.getColor(Theme.key_divider));
             LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, AndroidUtilities.dp(1)));
-            dlp.leftMargin = AndroidUtilities.dp(9 + 12 + 40 + 11);
+            dlp.leftMargin = AndroidUtilities.dp(9 + 12 + 30 + 11);
             dlp.rightMargin = AndroidUtilities.dp(9 + 12);
             card.addView(row, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
             card.addView(divider, dlp);
@@ -13822,9 +13827,9 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
             h.title.setText(item.title);
             h.text.setText(item.subtitle);
             h.time.setText(item.time);
-            AvatarDrawable avatarDrawable = new AvatarDrawable();
-            if (item.avatarObject instanceof TLRPC.Chat) {
+            if (item.showAvatar && item.avatarObject instanceof TLRPC.Chat) {
                 TLRPC.Chat chat = (TLRPC.Chat) item.avatarObject;
+                AvatarDrawable avatarDrawable = new AvatarDrawable();
                 avatarDrawable.setInfo(chat);
                 h.avatar.setForUserOrChat(chat, avatarDrawable);
             } else {
