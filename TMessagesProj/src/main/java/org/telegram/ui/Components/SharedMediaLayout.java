@@ -13339,6 +13339,7 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
         boolean firstInGroup;
         boolean lastInGroup;
         boolean showAvatar;
+        boolean showTitle;
     }
 
     private static class ActHolder {
@@ -13593,38 +13594,74 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
             }
             Collections.sort(copy, (a, b) -> Integer.compare(b.date, a.date));
             final MessagesController mc = MessagesController.getInstance(account);
-            final ArrayList<ActItem> built = new ArrayList<>();
-            int lastDay = -1;
-            final java.util.HashSet<Long> dayChats = new java.util.HashSet<>();
+
+            // 见山：按「天」分组，天里再把同一个群的消息聚在一起（群之间按该群最新一条排序），
+            // 这样不会出现同一个群被别的群打断的情况。
+            final java.util.LinkedHashMap<Integer, java.util.LinkedHashMap<Long, ArrayList<TLRPC.Message>>> byDay =
+                    new java.util.LinkedHashMap<>();
             for (int i = 0; i < copy.size(); i++) {
                 TLRPC.Message m = copy.get(i);
                 int day = (int) (m.date / 86400);
-                if (day != lastDay) {
-                    lastDay = day;
-                    dayChats.clear();
+                long chatId = MessageObject.getChatId(m);
+                java.util.LinkedHashMap<Long, ArrayList<TLRPC.Message>> dayMap = byDay.get(day);
+                if (dayMap == null) {
+                    dayMap = new java.util.LinkedHashMap<>();
+                    byDay.put(day, dayMap);
+                }
+                ArrayList<TLRPC.Message> list = dayMap.get(chatId);
+                if (list == null) {
+                    list = new ArrayList<>();
+                    dayMap.put(chatId, list);
+                }
+                list.add(m);
+            }
+
+            final ArrayList<ActItem> built = new ArrayList<>();
+            for (java.util.Map.Entry<Integer, java.util.LinkedHashMap<Long, ArrayList<TLRPC.Message>>> dayEntry : byDay.entrySet()) {
+                ArrayList<TLRPC.Message> dayMessages = new ArrayList<>();
+                for (ArrayList<TLRPC.Message> l : dayEntry.getValue().values()) {
+                    dayMessages.addAll(l);
+                }
+                Collections.sort(dayMessages, (a, b) -> Integer.compare(b.date, a.date));
+                if (!dayMessages.isEmpty()) {
                     ActItem header = new ActItem();
                     header.type = 0;
-                    header.title = LocaleController.stringForMessageListDate(m.date);
+                    header.title = LocaleController.stringForMessageListDate(dayMessages.get(0).date);
                     built.add(header);
                 }
-                MessageObject mo = new MessageObject(account, m, false, false);
-                long chatId = MessageObject.getChatId(m);
-                TLRPC.Chat chat = chatId != 0 ? mc.getChat(chatId) : null;
-                ActItem item = new ActItem();
-                item.type = 1;
-                item.avatarObject = chat;
-                item.title = chat != null && chat.title != null ? chat.title : "群组";
-                CharSequence txt = mo.messageText;
-                item.subtitle = txt == null ? "" : txt.toString().replace('\n', ' ');
-                item.time = android.text.format.DateFormat.getTimeFormat(actContext)
-                        .format(new Date((long) m.date * 1000L));
-                item.dialogId = MessageObject.getDialogId(m);
-                item.messageId = m.id;
-                // Nice 的行为：同一天里，同一个群只显示一次头像
-                item.showAvatar = dayChats.add(chatId);
-                built.add(item);
+                // 群按该群最新一条消息的时间倒序
+                ArrayList<java.util.Map.Entry<Long, ArrayList<TLRPC.Message>>> groups =
+                        new ArrayList<>(dayEntry.getValue().entrySet());
+                Collections.sort(groups, (g1, g2) -> Integer.compare(
+                        g2.getValue().get(0).date, g1.getValue().get(0).date));
+                for (int gi = 0; gi < groups.size(); gi++) {
+                    ArrayList<TLRPC.Message> groupMessages = groups.get(gi).getValue();
+                    for (int mi = 0; mi < groupMessages.size(); mi++) {
+                        TLRPC.Message m = groupMessages.get(mi);
+                        MessageObject mo = new MessageObject(account, m, false, false);
+                        long chatId = MessageObject.getChatId(m);
+                        TLRPC.Chat chat = chatId != 0 ? mc.getChat(chatId) : null;
+                        ActItem item = new ActItem();
+                        item.type = 1;
+                        item.avatarObject = chat;
+                        item.title = chat != null && chat.title != null ? chat.title : "群组";
+                        CharSequence txt = mo.messageText;
+                        item.subtitle = txt == null ? "" : txt.toString().replace('\n', ' ');
+                        item.time = android.text.format.DateFormat.getTimeFormat(actContext)
+                                .format(new Date((long) m.date * 1000L));
+                        item.dialogId = MessageObject.getDialogId(m);
+                        item.messageId = m.id;
+                        item.firstInGroup = false;
+                        item.lastInGroup = false;
+                        // 同一天同一个群：只有第一条显示头像和群名
+                        item.showAvatar = mi == 0;
+                        item.showTitle = mi == 0;
+                        built.add(item);
+                    }
+                }
             }
-            // 标记组内首/尾，用于圆角与分割线
+
+            // 圆角按「当天整张卡片」算：每组的第一行如果是卡片第一行则上圆角，最后一行若是卡片末尾则下圆角
             for (int i = 0; i < built.size(); i++) {
                 ActItem it = built.get(i);
                 if (it.type != 1) {
@@ -13825,6 +13862,7 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
             h.divider.setVisibility(item.lastInGroup ? View.GONE : View.VISIBLE);
 
             h.title.setText(item.title);
+            h.title.setVisibility(item.showTitle ? View.VISIBLE : View.GONE);
             h.text.setText(item.subtitle);
             h.time.setText(item.time);
             if (item.showAvatar && item.avatarObject instanceof TLRPC.Chat) {
