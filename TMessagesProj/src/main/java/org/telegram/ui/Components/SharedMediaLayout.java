@@ -13799,7 +13799,7 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
             title.setMaxLines(1);
             title.setEllipsize(TextUtils.TruncateAt.END);
             TextView text = new TextView(actContext);
-            text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+            text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
             text.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2));
             text.setMaxLines(1);
             text.setEllipsize(TextUtils.TruncateAt.END);
@@ -13817,7 +13817,7 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
             View divider = new View(actContext);
             divider.setBackgroundColor(Theme.getColor(Theme.key_divider));
             LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, AndroidUtilities.dp(1)));
-            dlp.leftMargin = AndroidUtilities.dp(9 + 12 + 30 + 11);
+            dlp.leftMargin = AndroidUtilities.dp(53);
             dlp.rightMargin = AndroidUtilities.dp(9 + 12);
             card.addView(row, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
             card.addView(divider, dlp);
@@ -13863,8 +13863,26 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
 
             h.title.setText(item.title);
             h.title.setVisibility(item.showTitle ? View.VISIBLE : View.GONE);
-            h.text.setText(item.subtitle);
-            h.time.setText(item.time);
+            // 见山：续行没有头像，文字往前挪到头像中线位置，分割线也跟着缩进
+            // 见山：续行没有头像，文字往前挪到头像中线位置（12 + 15 = 27dp），分割线同步
+            View textsColumn = (View) h.text.getParent();
+            if (textsColumn != null && textsColumn.getLayoutParams() instanceof LinearLayout.LayoutParams) {
+                LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) textsColumn.getLayoutParams();
+                int target = item.showTitle ? 0 : AndroidUtilities.dp(15);
+                if (lp.leftMargin != target) {
+                    lp.leftMargin = target;
+                    textsColumn.setLayoutParams(lp);
+                }
+            }
+            if (h.divider.getLayoutParams() instanceof LinearLayout.LayoutParams) {
+                LinearLayout.LayoutParams dlp2 = (LinearLayout.LayoutParams) h.divider.getLayoutParams();
+                int target = item.showTitle ? AndroidUtilities.dp(53) : AndroidUtilities.dp(27);
+                if (dlp2.leftMargin != target) {
+                    dlp2.leftMargin = target;
+                    h.divider.setLayoutParams(dlp2);
+                }
+            }
+            h.avatar.setVisibility(item.showTitle ? View.VISIBLE : View.GONE);
             if (item.showAvatar && item.avatarObject instanceof TLRPC.Chat) {
                 TLRPC.Chat chat = (TLRPC.Chat) item.avatarObject;
                 AvatarDrawable avatarDrawable = new AvatarDrawable();
