@@ -38,6 +38,8 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
 
     private final int accentAsNotificationColorRow = rowId++;
     private final int silenceNonContactsRow = rowId++;
+    private final int jianshanSaveRecalledRow = rowId++;
+    private final int jianshanSavedListRow = rowId++;
 
     private final int nameOrderRow = rowId++;
     private final int idTypeRow = rowId++;
@@ -154,6 +156,12 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
         items.add(UItem.asCheck(silenceNonContactsRow, LocaleController.getString(R.string.SilenceNonContacts)).slug("silenceNonContacts").setChecked(NekoConfig.silenceNonContacts));
         items.add(UItem.asShadow(LocaleController.getString(R.string.SilenceNonContactsAbout)));
 
+        items.add(UItem.asHeader("见山 · 本地增强"));
+        items.add(UItem.asCheck(jianshanSaveRecalledRow, "保存被撤回/删除的消息").slug("jsSaveRecalled").setChecked(org.telegram.messenger.JianshanLocalStore.isSaveRecalledEnabled()));
+        items.add(UItem.asButton(jianshanSavedListRow, "查看已保存消息").slug("jsSavedList"));
+        items.add(UItem.asShadow("只保存在本机，不上传服务器。"));
+
+
         items.add(UItem.asHeader(LocaleController.getString(R.string.UserColorTabProfile)));
         items.add(TextSettingsCellFactory.of(nameOrderRow, LocaleController.getString(R.string.NameOrder), switch (NekoConfig.nameOrder) {
             case 2 -> LocaleController.getString(R.string.LastFirst);
@@ -185,6 +193,43 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
     @Override
     protected void onItemClick(UItem item, View view, int position, float x, float y) {
         var id = item.id;
+        if (id == jianshanSaveRecalledRow) {
+            boolean next = !org.telegram.messenger.JianshanLocalStore.isSaveRecalledEnabled();
+            org.telegram.messenger.JianshanLocalStore.setSaveRecalledEnabled(next);
+            if (view instanceof TextCheckCell) {
+                ((TextCheckCell) view).setChecked(next);
+            }
+            return;
+        }
+        if (id == jianshanSavedListRow) {
+            java.util.ArrayList<String[]> saved = org.telegram.messenger.JianshanLocalStore.getSavedMessages();
+            StringBuilder sb = new StringBuilder();
+            int count = 0;
+            for (String[] row : saved) {
+                if (count++ >= 60) {
+                    sb.append("…\n");
+                    break;
+                }
+                String time;
+                try {
+                    time = org.telegram.messenger.LocaleController.stringForMessageListDate(
+                            Long.parseLong(row[1]));
+                } catch (Throwable e) {
+                    time = row[1];
+                }
+                sb.append(time).append("  ").append(row[2]).append('\n');
+            }
+            if (saved.isEmpty()) {
+                sb.append("还没有保存到任何消息。开启上面的开关后，收到的新消息都会留一份在本机。");
+            }
+            android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(getParentActivity())
+                    .setTitle("已保存消息（" + saved.size() + "）")
+                    .setMessage(sb.toString())
+                    .setPositiveButton("关闭", null)
+                    .create();
+            dialog.show();
+            return;
+        }
         if (id == ipv6Row) {
             NekoConfig.togglePreferIPv6();
             if (view instanceof TextCheckCell) {

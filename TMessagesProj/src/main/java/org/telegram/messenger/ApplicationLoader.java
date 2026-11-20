@@ -376,6 +376,7 @@ public class ApplicationLoader extends Application {
         AndroidUtilities.runOnUIThread(ApplicationLoader::startPushService);
         countDownLatch.countDown();
 
+        JianshanLocalStore.install();
         LauncherIconController.tryFixLauncherIconIfNeeded();
         ProxyRotationController.init();
 
