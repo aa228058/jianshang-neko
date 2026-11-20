@@ -109,7 +109,9 @@ public class JianshanInboxActivity extends BaseFragment {
             subtitle.setMaxLines(1);
             subtitle.setEllipsize(TextUtils.TruncateAt.END);
             texts.addView(title, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-            texts.addView(subtitle, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 2, 0, 0, 0));
+            LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            subLp.topMargin = AndroidUtilities.dp(2);
+            texts.addView(subtitle, subLp);
             row.addView(texts, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
             TextView time = new TextView(context);
