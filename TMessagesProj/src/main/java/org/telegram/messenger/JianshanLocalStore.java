@@ -36,6 +36,14 @@ public final class JianshanLocalStore {
         prefs().edit().putBoolean("save_recalled", value).apply();
     }
 
+    public static boolean isAntiRevokeEnabled() {
+        return prefs().getBoolean("anti_revoke", true);   // 默认开启
+    }
+
+    public static void setAntiRevokeEnabled(boolean value) {
+        prefs().edit().putBoolean("anti_revoke", value).apply();
+    }
+
     public static boolean isFakeEnabled() {
         return prefs().getBoolean("fake_enabled", true);
     }

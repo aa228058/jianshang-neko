@@ -13863,6 +13863,8 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
 
             h.title.setText(item.title);
             h.title.setVisibility(item.showTitle ? View.VISIBLE : View.GONE);
+            h.text.setText(item.subtitle);
+            h.time.setText(item.time);
             // 见山：续行没有头像，文字往前挪到头像中线位置，分割线也跟着缩进
             // 见山：续行没有头像，文字往前挪到头像中线位置（12 + 15 = 27dp），分割线同步
             View textsColumn = (View) h.text.getParent();
