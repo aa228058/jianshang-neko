@@ -18912,7 +18912,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 // 见山：防撤回 —— 开启时忽略服务端删除通知，消息保留在本地（并打上"已撤回"标记）
                 if (JianshanLocalStore.isAntiRevokeEnabled()) {
                     for (int i = 0; i < update.messages.size(); i++) {
-                        JianshanLocalStore.markRecalled(account, update.messages.get(i));
+                        JianshanLocalStore.markRecalled(currentAccount, update.messages.get(i));
                     }
                 }
                 if (!JianshanLocalStore.isAntiRevokeEnabled()) {
@@ -19449,7 +19449,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 // 见山：防撤回 —— 开启时忽略频道/超级群的删除通知，并打标记
                 if (JianshanLocalStore.isAntiRevokeEnabled()) {
                     for (int i = 0; i < update.messages.size(); i++) {
-                        JianshanLocalStore.markRecalled(account, update.messages.get(i));
+                        JianshanLocalStore.markRecalled(currentAccount, update.messages.get(i));
                     }
                 }
                 if (!JianshanLocalStore.isAntiRevokeEnabled()) {
