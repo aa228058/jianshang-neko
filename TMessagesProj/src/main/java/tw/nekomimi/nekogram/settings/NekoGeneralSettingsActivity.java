@@ -40,6 +40,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
     private final int silenceNonContactsRow = rowId++;
     private final int jianshanSaveRecalledRow = rowId++;
     private final int jianshanSavedListRow = rowId++;
+    private final int jianshanInboxRow = rowId++;
 
     private final int nameOrderRow = rowId++;
     private final int idTypeRow = rowId++;
@@ -159,6 +160,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
         items.add(UItem.asHeader("见山 · 本地增强"));
         items.add(UItem.asCheck(jianshanSaveRecalledRow, "保存被撤回/删除的消息").slug("jsSaveRecalled").setChecked(org.telegram.messenger.JianshanLocalStore.isSaveRecalledEnabled()));
         items.add(UItem.asButton(jianshanSavedListRow, "查看已保存消息").slug("jsSavedList"));
+        items.add(UItem.asButton(jianshanInboxRow, "汇总（私聊未读 + @我/回复我的）").slug("jsInbox"));
         items.add(UItem.asShadow("只保存在本机，不上传服务器。"));
 
 
@@ -199,6 +201,10 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
             if (view instanceof TextCheckCell) {
                 ((TextCheckCell) view).setChecked(next);
             }
+            return;
+        }
+        if (id == jianshanInboxRow) {
+            presentFragment(new tw.nekomimi.nekogram.JianshanInboxActivity());
             return;
         }
         if (id == jianshanSavedListRow) {
