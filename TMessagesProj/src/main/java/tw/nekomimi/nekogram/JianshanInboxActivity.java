@@ -226,7 +226,8 @@ public class JianshanInboxActivity extends BaseFragment {
                 row.dialogId = dialog.id;
                 row.unread = dialog.unread_count + dialog.unread_mentions_count;
                 row.isPrivate = isPrivate;
-                row.time = android.text.format.DateFormat.getTimeFormat(applicationContext)
+                row.time = android.text.format.DateFormat.getTimeFormat(
+                                org.telegram.messenger.ApplicationLoader.applicationContext)
                         .format(new Date((long) dialog.last_message_date * 1000L));
                 TLRPC.User user = isPrivate ? mc.getUser(dialog.id) : null;
                 TLRPC.Chat chat = isPrivate ? null : mc.getChat(-dialog.id);
