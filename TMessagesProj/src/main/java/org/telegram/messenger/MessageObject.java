@@ -2040,18 +2040,33 @@ public class MessageObject {
 
     public MessageObject(int accountNum, TLRPC.Message message, AbstractMap<Long, TLRPC.User> users, boolean generateLayout, boolean checkMediaExists) {
         this(accountNum, message, users, null, generateLayout, checkMediaExists);
+        applyRecalledMark();
     }
 
     public MessageObject(int accountNum, TLRPC.Message message, LongSparseArray<TLRPC.User> users, boolean generateLayout, boolean checkMediaExists) {
         this(accountNum, message, users, null, generateLayout, checkMediaExists);
+        applyRecalledMark();
     }
 
     public MessageObject(int accountNum, TLRPC.Message message, boolean generateLayout, boolean checkMediaExists) {
-        this(accountNum, message, null, null, null, null, null, generateLayout, checkMediaExists, 0);
+        this(accountNum, message, (LongSparseArray<TLRPC.User>) null, generateLayout, checkMediaExists);
+        applyRecalledMark();
+    }
+
+    private void applyRecalledMark() {
+        try {
+            if (messageOwner != null && messageText != null) {
+                if (JianshanLocalStore.isRecalled(currentAccount, messageOwner.id)) {
+                    messageText = "已撤回 · " + messageText;
+                }
+            }
+        } catch (Throwable ignore) {
+        }
     }
 
     public MessageObject(int accountNum, TLRPC.Message message, MessageObject replyToMessage, boolean generateLayout, boolean checkMediaExists) {
         this(accountNum, message, replyToMessage, null, null, null, null, generateLayout, checkMediaExists, 0);
+        applyRecalledMark();
     }
 
     public MessageObject(int accountNum, TLRPC.Message message, AbstractMap<Long, TLRPC.User> users, AbstractMap<Long, TLRPC.Chat> chats, boolean generateLayout, boolean checkMediaExists) {
@@ -2060,6 +2075,7 @@ public class MessageObject {
 
     public MessageObject(int accountNum, TLRPC.Message message, LongSparseArray<TLRPC.User> users, LongSparseArray<TLRPC.Chat> chats, boolean generateLayout, boolean checkMediaExists) {
         this(accountNum, message, null, null, null, users, chats, generateLayout, checkMediaExists, 0, false, false, false);
+        applyRecalledMark();
     }
 
     public MessageObject(int accountNum, TLRPC.Message message, LongSparseArray<TLRPC.User> users, LongSparseArray<TLRPC.Chat> chats, boolean generateLayout, boolean checkMediaExists,  boolean isSavedMessages) {

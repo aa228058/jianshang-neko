@@ -133,6 +133,29 @@ public final class JianshanLocalStore {
         return out;
     }
 
+    /* ───────── 撤回标记（用于在消息上提示"对方已撤回"） ───────── */
+
+    public static void markRecalled(int account, int messageId) {
+        SharedPreferences p = prefs();
+        String key = "recalled_" + account;
+        String cur = p.getString(key, "");
+        String token = String.valueOf(messageId);
+        if (("," + cur + ",").contains("," + token + ",")) {
+            return;
+        }
+        String next = cur.isEmpty() ? token : cur + "," + token;
+        if (next.length() > 20000) {
+            int cut = next.indexOf(',', next.length() - 15000);
+            next = cut > 0 ? next.substring(cut + 1) : next;
+        }
+        p.edit().putString(key, next).apply();
+    }
+
+    public static boolean isRecalled(int account, int messageId) {
+        String cur = prefs().getString("recalled_" + account, "");
+        return !cur.isEmpty() && ("," + cur + ",").contains("," + messageId + ",");
+    }
+
     /* ───────── 观察新消息（用于撤回后仍可查） ───────── */
 
     private static boolean installed;

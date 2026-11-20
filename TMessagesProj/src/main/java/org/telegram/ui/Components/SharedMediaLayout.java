@@ -13799,7 +13799,7 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
             title.setMaxLines(1);
             title.setEllipsize(TextUtils.TruncateAt.END);
             TextView text = new TextView(actContext);
-            text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
             text.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2));
             text.setMaxLines(1);
             text.setEllipsize(TextUtils.TruncateAt.END);
