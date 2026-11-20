@@ -18,6 +18,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.TLRPC;
@@ -40,7 +41,7 @@ import java.util.Date;
  * 把所有已登录账号里「私聊的未读」和「群里 @我 / 回复我的未读」聚到一个列表。
  * 只读本地会话缓存，不复制消息、不跨账号搬运数据。
  */
-public class JianshanInboxActivity extends BaseFragment {
+public class JianshanInboxActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate {
 
     private RecyclerListView listView;
     private InboxAdapter adapter;
@@ -122,6 +123,7 @@ public class JianshanInboxActivity extends BaseFragment {
             row.addView(time, tlp);
 
             cell.addView(row, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+            cell.setLayoutParams(new RecyclerView.LayoutParams(RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
             cell.setTag(new Holder(avatar, title, subtitle, time));
             return new RecyclerListView.Holder(cell);
         }
@@ -174,27 +176,70 @@ public class JianshanInboxActivity extends BaseFragment {
 
     @Override
     public View createView(Context context) {
-        actionBar.setBackButtonImage(org.telegram.messenger.R.drawable.ic_ab_back);
-        actionBar.setAllowOverlayTitle(true);
-        actionBar.setTitle("汇总");
-        actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
-            @Override
-            public void onItemClick(int id) {
-                if (id == -1) {
-                    finishFragment();
-                }
-            }
-        });
+        if (actionBar != null) {
+            actionBar.setVisibility(View.GONE);
+        }
 
         FrameLayout content = new FrameLayout(context);
+        final int statusBar = AndroidUtilities.statusBarHeight;
+
+        TextView title = new TextView(context);
+        title.setText("汇总");
+        title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
+        title.setTypeface(AndroidUtilities.bold());
+        title.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        title.setPadding(AndroidUtilities.dp(20), statusBar + AndroidUtilities.dp(12), AndroidUtilities.dp(20), AndroidUtilities.dp(10));
+        content.addView(title, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
         listView = new RecyclerListView(context);
         listView.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false));
+        listView.setPadding(0, statusBar + AndroidUtilities.dp(56), 0, AndroidUtilities.dp(96));
+        listView.setClipToPadding(false);
         adapter = new InboxAdapter(context);
         listView.setAdapter(adapter);
         content.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+
         fragmentView = content;
+        warmUpAccounts();
         loadRows();
         return fragmentView;
+    }
+
+    /** 见山：汇总要覆盖所有账号 —— 先把各账号的会话列表从本地库热起来 */
+    private void warmUpAccounts() {
+        for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
+            if (!UserConfig.getInstance(a).isClientActivated()) {
+                continue;
+            }
+            try {
+                MessagesController mc = MessagesController.getInstance(a);
+                if (mc.getAllDialogs().isEmpty()) {
+                    mc.loadDialogs(0, 0, 100, true);
+                }
+            } catch (Throwable ignore) {
+            }
+        }
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.dialogsNeedReload);
+        warmUpAccounts();
+        loadRows();
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.dialogsNeedReload);
+    }
+
+    @Override
+    public void didReceivedNotification(int id, int account, Object... args) {
+        if (id == NotificationCenter.dialogsNeedReload) {
+            loadRows();
+        }
     }
 
     private void loadRows() {

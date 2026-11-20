@@ -13482,7 +13482,12 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
         }
 
         private int itemsOffset() {
-            return actItems.isEmpty() ? 2 : 1;
+            // 见山：加载中只显示转圈，不显示文字；没有数据且不在加载时才显示状态文字
+            return showStatusRow() ? 2 : 1;
+        }
+
+        private boolean showStatusRow() {
+            return actItems.isEmpty() && !actLoading;
         }
 
         private ActItem itemAt(int position) {
@@ -13701,7 +13706,7 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
 
         @Override
         public int getItemCount() {
-            return 1 + (actItems.isEmpty() ? 1 : 0) + actItems.size();
+            return 1 + (showStatusRow() ? 1 : 0) + actItems.size();
         }
 
         @Override

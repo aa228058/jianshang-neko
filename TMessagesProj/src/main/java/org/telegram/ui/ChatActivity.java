@@ -23595,6 +23595,28 @@ public class ChatActivity extends BaseFragment implements
             }
             ArrayList<Integer> markAsDeletedMessages = (ArrayList<Integer>) args[0];
             long channelId = (Long) args[1];
+
+            // 见山：防删除 —— 别人撤回/删除时，消息保留并把文字标记为「已撤回」
+            if (JianshanLocalStore.isAntiRevokeEnabled() && !markAsDeletedMessages.isEmpty()) {
+                boolean hasKept = false;
+                for (int msgId : markAsDeletedMessages) {
+                    JianshanLocalStore.markRecalled(currentAccount, msgId);
+                    MessageObject mo = messagesDict[0].get(msgId);
+                    if (mo == null) {
+                        mo = messagesDict[1].get(msgId);
+                    }
+                    if (mo != null && mo.messageText != null && !mo.messageText.toString().startsWith("已撤回 · ")) {
+                        mo.messageText = "已撤回 · " + mo.messageText;
+                        hasKept = true;
+                    }
+                }
+                if (hasKept) {
+                    chatAdapter.updateRowsSafe();
+                }
+                if (hasKept) {
+                    return;
+                }
+            }
             boolean update = args.length > 2 && (boolean) args[2];
             boolean sent = args.length > 3 && (boolean) args[3];
             int scheduledMessageId = args.length > 5 ? (int) args[5] : 0;
