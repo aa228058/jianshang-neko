@@ -821,7 +821,10 @@ public class ConnectionsManager extends BaseController {
             if (lastPauseTime == 0) {
                 lastPauseTime = System.currentTimeMillis();
             }
-            native_pauseNetwork(currentAccount);
+            // 见山：常驻保活开启时，后台不暂停网络，否则长连接会被掐掉、消息收不到
+            if (!org.telegram.messenger.JianshanResidentService.isKeepAliveEnabled()) {
+                native_pauseNetwork(currentAccount);
+            }
         } else {
             if (appPaused) {
                 return;
