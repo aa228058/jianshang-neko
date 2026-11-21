@@ -42,6 +42,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
     private final int jianshanSavedListRow = rowId++;
     private final int jianshanInboxRow = rowId++;
     private final int jianshanAntiRevokeRow = rowId++;
+    private final int jianshanResidentRow = rowId++;
 
     private final int nameOrderRow = rowId++;
     private final int idTypeRow = rowId++;
@@ -159,6 +160,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
         items.add(UItem.asShadow(LocaleController.getString(R.string.SilenceNonContactsAbout)));
 
         items.add(UItem.asHeader("见山 · 本地增强"));
+        items.add(UItem.asCheck(jianshanResidentRow, "常驻保活（前台服务，减少被系统清理）").slug("jsResident").setChecked(org.telegram.messenger.JianshanLocalStore.isResidentEnabled()));
         items.add(UItem.asCheck(jianshanAntiRevokeRow, "防撤回（对方撤回我这边仍可见）").slug("jsAntiRevoke").setChecked(org.telegram.messenger.JianshanLocalStore.isAntiRevokeEnabled()));
         items.add(UItem.asCheck(jianshanSaveRecalledRow, "保存被撤回/删除的消息").slug("jsSaveRecalled").setChecked(org.telegram.messenger.JianshanLocalStore.isSaveRecalledEnabled()));
         items.add(UItem.asButton(jianshanSavedListRow, "查看已保存消息").slug("jsSavedList"));
@@ -197,6 +199,14 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
     @Override
     protected void onItemClick(UItem item, View view, int position, float x, float y) {
         var id = item.id;
+        if (id == jianshanResidentRow) {
+            boolean next = !org.telegram.messenger.JianshanLocalStore.isResidentEnabled();
+            org.telegram.messenger.JianshanLocalStore.setResidentEnabled(next);
+            if (view instanceof TextCheckCell) {
+                ((TextCheckCell) view).setChecked(next);
+            }
+            return;
+        }
         if (id == jianshanAntiRevokeRow) {
             boolean next = !org.telegram.messenger.JianshanLocalStore.isAntiRevokeEnabled();
             org.telegram.messenger.JianshanLocalStore.setAntiRevokeEnabled(next);

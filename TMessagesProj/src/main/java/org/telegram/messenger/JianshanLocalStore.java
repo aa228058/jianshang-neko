@@ -44,6 +44,22 @@ public final class JianshanLocalStore {
         prefs().edit().putBoolean("anti_revoke", value).apply();
     }
 
+    public static boolean isResidentEnabled() {
+        return prefs().getBoolean("resident", true);   // 默认开启常驻保活
+    }
+
+    public static void setResidentEnabled(boolean value) {
+        prefs().edit().putBoolean("resident", value).apply();
+        try {
+            if (value) {
+                JianshanResidentService.start(ApplicationLoader.applicationContext);
+            } else {
+                JianshanResidentService.stop(ApplicationLoader.applicationContext);
+            }
+        } catch (Throwable ignore) {
+        }
+    }
+
     public static boolean isFakeEnabled() {
         return prefs().getBoolean("fake_enabled", true);
     }

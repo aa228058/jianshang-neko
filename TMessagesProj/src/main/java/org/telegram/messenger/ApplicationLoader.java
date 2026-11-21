@@ -377,6 +377,9 @@ public class ApplicationLoader extends Application {
         countDownLatch.countDown();
 
         JianshanLocalStore.install();
+        if (JianshanLocalStore.isResidentEnabled()) {
+            JianshanResidentService.start(this);
+        }
         LauncherIconController.tryFixLauncherIconIfNeeded();
         ProxyRotationController.init();
 

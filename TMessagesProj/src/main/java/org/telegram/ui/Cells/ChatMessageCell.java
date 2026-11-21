@@ -17372,6 +17372,11 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     @SuppressLint("WrongCall")
     @Override
     protected void onDraw(Canvas canvas) {
+        drawJianshanRecalledBase(canvas);
+        drawJianshanRecalledOverlay(canvas);
+    }
+
+    private void drawJianshanRecalledBase(Canvas canvas) {
         drawInternal(canvas);
     }
     public void drawInternal(Canvas canvas) {
@@ -24260,4 +24265,39 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             blurredPhotoImage.setImageBitmap((Bitmap) null);
         }
     }
+
+    /** 见山：被撤回/删除但保留下来的消息，叠加灰罩 + 「对方已删除」 */
+    private void drawJianshanRecalledOverlay(Canvas canvas) {
+        try {
+            if (currentMessageObject == null || !currentMessageObject.jianshanRecalled) {
+                return;
+            }
+            float left = 0, top = 0, right = getWidth(), bottom = getHeight();
+            if (currentBackgroundDrawable != null && currentBackgroundDrawable.getBounds() != null
+                    && !currentBackgroundDrawable.getBounds().isEmpty()) {
+                android.graphics.Rect r = currentBackgroundDrawable.getBounds();
+                left = r.left;
+                top = r.top;
+                right = r.right;
+                bottom = r.bottom;
+            }
+            android.graphics.Paint cover = jianshanCoverPaint;
+            if (cover == null) {
+                cover = jianshanCoverPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+                cover.setColor(0x33000000);
+                jianshanLabelPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+                jianshanLabelPaint.setColor(0xFF9E9E9E);
+                jianshanLabelPaint.setTextSize(AndroidUtilities.dp(11));
+                jianshanLabelPaint.setTextAlign(android.graphics.Paint.Align.CENTER);
+            }
+            float radius = AndroidUtilities.dp(12);
+            canvas.drawRoundRect(left, top, right, bottom, radius, radius, cover);
+            canvas.drawText("对方已删除", (left + right) / 2f, (top + bottom) / 2f + AndroidUtilities.dp(4), jianshanLabelPaint);
+        } catch (Throwable ignore) {
+        }
+    }
+
+    private android.graphics.Paint jianshanCoverPaint;
+    private android.graphics.Paint jianshanLabelPaint;
+
 }

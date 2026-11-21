@@ -236,6 +236,8 @@ public class MessageObject {
     public int dateKeyInt;
     public String monthKey;
     public boolean deleted;
+    /** 见山：这条消息在服务端已被撤回/删除，但我们选择保留并标记 */
+    public boolean jianshanRecalled;
     public boolean deletedByThanos;
     public float audioProgress;
     public float forceSeekTo = -1;
@@ -2055,10 +2057,8 @@ public class MessageObject {
 
     private void applyRecalledMark() {
         try {
-            if (messageOwner != null && messageText != null) {
-                if (JianshanLocalStore.isRecalled(currentAccount, messageOwner.id)) {
-                    messageText = "已撤回 · " + messageText;
-                }
+            if (messageOwner != null && JianshanLocalStore.isRecalled(currentAccount, messageOwner.id)) {
+                jianshanRecalled = true;
             }
         } catch (Throwable ignore) {
         }

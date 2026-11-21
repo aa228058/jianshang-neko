@@ -23605,8 +23605,8 @@ public class ChatActivity extends BaseFragment implements
                     if (mo == null) {
                         mo = messagesDict[1].get(msgId);
                     }
-                    if (mo != null && mo.messageText != null && !mo.messageText.toString().startsWith("已撤回 · ")) {
-                        mo.messageText = "已撤回 · " + mo.messageText;
+                    if (mo != null && !mo.jianshanRecalled) {
+                        mo.jianshanRecalled = true;
                         hasKept = true;
                     }
                 }
