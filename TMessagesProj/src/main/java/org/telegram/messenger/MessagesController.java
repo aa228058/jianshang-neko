@@ -18910,11 +18910,14 @@ public class MessagesController extends BaseController implements NotificationCe
                     deletedMessages = new LongSparseArray<>();
                 }
                 if (JianshanLocalStore.isAntiRevokeEnabled()) {
+                    // 见山：防删除 —— 不写进 deletedMessages（数据库保持不变），并主动通知界面打标记
                     for (int i = 0; i < update.messages.size(); i++) {
                         JianshanLocalStore.markRecalled(currentAccount, update.messages.get(i));
                     }
-                }
-                {
+                    final ArrayList<Integer> keep = new ArrayList<>(update.messages);
+                    AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(currentAccount)
+                            .postNotificationName(NotificationCenter.messagesDeleted, keep, 0L, false));
+                } else {
                     ArrayList<Integer> arrayList = deletedMessages.get(0);
                     if (arrayList == null) {
                         arrayList = new ArrayList<>();
@@ -19449,8 +19452,11 @@ public class MessagesController extends BaseController implements NotificationCe
                     for (int i = 0; i < update.messages.size(); i++) {
                         JianshanLocalStore.markRecalled(currentAccount, update.messages.get(i));
                     }
-                }
-                {
+                    final ArrayList<Integer> keep = new ArrayList<>(update.messages);
+                    final long keepChannelId = update.channel_id;
+                    AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(currentAccount)
+                            .postNotificationName(NotificationCenter.messagesDeleted, keep, keepChannelId, false));
+                } else {
                     long dialogId = -update.channel_id;
                     ArrayList<Integer> arrayList = deletedMessages.get(dialogId);
                     if (arrayList == null) {

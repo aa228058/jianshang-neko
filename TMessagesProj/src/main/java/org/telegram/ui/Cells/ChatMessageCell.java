@@ -24266,7 +24266,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         }
     }
 
-    /** 见山：被撤回/删除但保留下来的消息，叠加灰罩 + 「对方已删除」 */
+    /** 见山：被撤回/删除但保留下来的消息 —— 整体压暗 + 右上角一个小标签，不遮挡正文 */
     private void drawJianshanRecalledOverlay(Canvas canvas) {
         try {
             if (currentMessageObject == null || !currentMessageObject.jianshanRecalled) {
@@ -24281,23 +24281,47 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 right = r.right;
                 bottom = r.bottom;
             }
-            android.graphics.Paint cover = jianshanCoverPaint;
-            if (cover == null) {
-                cover = jianshanCoverPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-                cover.setColor(0x33000000);
+            if (right - left <= 0 || bottom - top <= 0) {
+                return;
+            }
+            if (jianshanCoverPaint == null) {
+                jianshanCoverPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+                jianshanTagPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
                 jianshanLabelPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-                jianshanLabelPaint.setColor(0xFF9E9E9E);
-                jianshanLabelPaint.setTextSize(AndroidUtilities.dp(11));
+                jianshanLabelPaint.setTextSize(AndroidUtilities.dp(10));
+                jianshanLabelPaint.setTypeface(AndroidUtilities.bold());
                 jianshanLabelPaint.setTextAlign(android.graphics.Paint.Align.CENTER);
             }
-            float radius = AndroidUtilities.dp(12);
-            canvas.drawRoundRect(left, top, right, bottom, radius, radius, cover);
-            canvas.drawText("对方已删除", (left + right) / 2f, (top + bottom) / 2f + AndroidUtilities.dp(4), jianshanLabelPaint);
+            // 1) 整体压暗一点点（保留正文可读）
+            jianshanCoverPaint.setColor(0x26FFFFFF);
+            float radius = AndroidUtilities.dp(14);
+            canvas.drawRoundRect(left, top, right, bottom, radius, radius, jianshanCoverPaint);
+
+            // 2) 右上角小标签：灰底白字
+            String label = "已删除";
+            float padH = AndroidUtilities.dp(7);
+            float textW = jianshanLabelPaint.measureText(label);
+            float chipH = AndroidUtilities.dp(16);
+            float chipW = textW + padH * 2;
+            float chipRight = right - AndroidUtilities.dp(6);
+            float chipLeft = chipRight - chipW;
+            float chipTop = top + AndroidUtilities.dp(4);
+            float chipBottom = chipTop + chipH;
+            if (chipLeft < left) {
+                chipLeft = left + AndroidUtilities.dp(4);
+                chipRight = chipLeft + chipW;
+            }
+            jianshanTagPaint.setColor(0xCC616161);
+            canvas.drawRoundRect(chipLeft, chipTop, chipRight, chipBottom, chipH / 2f, chipH / 2f, jianshanTagPaint);
+            jianshanLabelPaint.setColor(0xFFFFFFFF);
+            canvas.drawText(label, (chipLeft + chipRight) / 2f,
+                    chipTop + chipH / 2f + AndroidUtilities.dp(3.5f), jianshanLabelPaint);
         } catch (Throwable ignore) {
         }
     }
 
     private android.graphics.Paint jianshanCoverPaint;
+    private android.graphics.Paint jianshanTagPaint;
     private android.graphics.Paint jianshanLabelPaint;
 
 }
