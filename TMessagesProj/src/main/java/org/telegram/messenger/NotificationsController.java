@@ -655,6 +655,10 @@ public class NotificationsController extends BaseController implements Notificat
                 if (!notifyCheck) {
                     delayedPushMessages.clear();
                     showOrUpdateNotification(notifyCheck);
+                } else if (jianshanNotifyImmediately()) {
+                    // 见山：保活常驻时不排队等延迟任务，直接上通知
+                    delayedPushMessages.clear();
+                    showOrUpdateNotification(true);
                 } else {
                     scheduleNotificationDelay(lastOnlineFromOtherDevice > getConnectionsManager().getCurrentTime());
                 }
@@ -741,6 +745,10 @@ public class NotificationsController extends BaseController implements Notificat
                 if (!notifyCheck) {
                     delayedPushMessages.clear();
                     showOrUpdateNotification(notifyCheck);
+                } else if (jianshanNotifyImmediately()) {
+                    // 见山：保活常驻时不排队等延迟任务，直接上通知
+                    delayedPushMessages.clear();
+                    showOrUpdateNotification(true);
                 } else {
                     scheduleNotificationDelay(lastOnlineFromOtherDevice > getConnectionsManager().getCurrentTime());
                 }
@@ -1562,6 +1570,10 @@ public class NotificationsController extends BaseController implements Notificat
                 if (!notifyCheck) {
                     delayedPushMessages.clear();
                     showOrUpdateNotification(notifyCheck);
+                } else if (jianshanNotifyImmediately()) {
+                    // 见山：保活常驻时不排队等延迟任务，直接上通知
+                    delayedPushMessages.clear();
+                    showOrUpdateNotification(true);
                 } else {
                     scheduleNotificationDelay(lastOnlineFromOtherDevice > getConnectionsManager().getCurrentTime());
                 }
@@ -3454,6 +3466,29 @@ public class NotificationsController extends BaseController implements Notificat
         }
     }
 
+    /* ── 见山：常驻保活开着且在后台时，通知不做“疑似别处在线”的 1s/3s 延迟 ── */
+    private boolean jianshanNotifyImmediately() {
+        try {
+            return JianshanResidentService.isKeepAliveEnabled() && ApplicationLoader.mainInterfacePaused;
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    /** 见山：保活 tick 用。确实有一条延迟中的通知才立即触发，避免重复响铃。 */
+    public void jianshanNudgeDelayedNotification() {
+        notificationsQueue.postRunnable(() -> {
+            try {
+                if (notificationDelayWakelock != null && notificationDelayWakelock.isHeld()) {
+                    notificationsQueue.cancelRunnable(notificationDelayRunnable);
+                    notificationDelayRunnable.run();
+                }
+            } catch (Throwable t) {
+                FileLog.e(t);
+            }
+        });
+    }
+
     private void scheduleNotificationDelay(boolean onlineReason) {
         try {
             if (BuildVars.LOGS_ENABLED) {
@@ -4256,7 +4291,8 @@ public class NotificationsController extends BaseController implements Notificat
                 lastMessageObject = pushMessages.get(0);
             }
             SharedPreferences preferences = getAccountInstance().getNotificationsSettings();
-            int dismissDate = preferences.getInt("dismissDate", 0);
+            int dismissDate = JianshanResidentService.isKeepAliveEnabled()
+                    ? 0 : preferences.getInt("dismissDate", 0);
             if (!lastMessageObject.isStoryPush && lastMessageObject.messageOwner.date <= dismissDate) {
                 dismissNotification();
                 return;
@@ -4440,7 +4476,11 @@ public class NotificationsController extends BaseController implements Notificat
             if (!notifyDisabled && dialog_id == override_dialog_id && chat != null) {
                 int notifyMaxCount;
                 int notifyDelay;
-                if (preferences.getBoolean("custom_" + dialog_id, false)) {
+                if (JianshanResidentService.isKeepAliveEnabled()) {
+                    // 见山：常驻收群消息时不做“3 分钟 2 条”静音节流，否则第 3 条起不响不弹
+                    notifyMaxCount = 0;
+                    notifyDelay = 3 * 60;
+                } else if (preferences.getBoolean("custom_" + dialog_id, false)) {
                     notifyMaxCount = preferences.getInt("smart_max_count_" + dialog_id, 2);
                     notifyDelay = preferences.getInt("smart_delay_" + dialog_id, 3 * 60);
                 } else {
