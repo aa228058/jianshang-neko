@@ -53,8 +53,10 @@ public final class JianshanLocalStore {
         try {
             if (value) {
                 JianshanResidentService.start(ApplicationLoader.applicationContext);
+                JianshanResidentJob.schedule(ApplicationLoader.applicationContext);
             } else {
                 JianshanResidentService.stop(ApplicationLoader.applicationContext);
+                JianshanResidentJob.cancel(ApplicationLoader.applicationContext);
             }
         } catch (Throwable ignore) {
         }
