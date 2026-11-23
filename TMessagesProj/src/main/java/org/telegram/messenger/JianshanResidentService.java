@@ -33,7 +33,9 @@ public final class JianshanResidentService extends Service {
 
     private static final int NOTIFICATION_ID = 0x4a5253; // "JRS"
     private static final int BATTERY_NOTIFICATION_ID = 0x4a5254;
-    private static final String CHANNEL = "jianshan_resident";
+    private static final String CHANNEL = "jianshan_resident2";
+    /** 见山：v-final27 用过的旧通道（IMPORTANCE_MIN，创建后无法提升，只能删掉重建） */
+    private static final String CHANNEL_LEGACY = "jianshan_resident";
     private static final String BATTERY_CHANNEL = "jianshan_battery";
     private static final String ACTION_STOP = "jianshan.resident.stop";
 
@@ -49,6 +51,9 @@ public final class JianshanResidentService extends Service {
     private final int[] deadTicks = new int[UserConfig.MAX_ACCOUNT_COUNT];
     private volatile boolean killed;
     private volatile boolean notificationShown;
+    private int fgsRepostCounter;
+    /** 见山：每 N 个 tick 复位一次前台服务通知（Android 13+ 可被用户划掉） */
+    private static final int FGS_REPOST_TICKS = 10;
     private static volatile boolean running;
 
     private final Runnable tick = new Runnable() {
@@ -83,8 +88,10 @@ public final class JianshanResidentService extends Service {
                     }
                 } catch (Throwable ignore) {
                 }
+                final boolean connected = deadTicks[a] == 0;
                 if (now >= nextNetWake[a]) {
-                    if (!woke && wakeLock != null) {
+                    // 见山：只有没连上才抢锁；正常连着时不抢，避免被 ROM 判成高频唤醒而限流
+                    if (!connected && !woke && wakeLock != null) {
                         wakeLock.acquire(WAKE_LOCK_MS);
                         woke = true;
                     }
@@ -95,7 +102,19 @@ public final class JianshanResidentService extends Service {
                     nextNetWake[a] = now + netGap;
                 }
             }
-            if (!notificationShown) {
+            // 见山：把被节流/被延迟卡住的通知推一把（只有确实延迟中的通知才会动作）
+            for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
+                if (!UserConfig.getInstance(a).isClientActivated()) {
+                    continue;
+                }
+                try {
+                    NotificationsController.getInstance(a).jianshanNudgeDelayedNotification();
+                } catch (Throwable ignore) {
+                }
+            }
+            // 见山：Android 13+ 允许用户划掉 FGS 通知，定期复位，别让常驻通知凭空消失
+            if (!notificationShown || ++fgsRepostCounter >= FGS_REPOST_TICKS) {
+                fgsRepostCounter = 0;
                 showNotification();
                 notificationShown = true;
             }
@@ -163,16 +182,25 @@ public final class JianshanResidentService extends Service {
             wakeLock.setReferenceCounted(false);
         }
         if (Build.VERSION.SDK_INT >= 26) {
-            NotificationChannel channel = new NotificationChannel(CHANNEL, "后台常驻",
-                    NotificationManager.IMPORTANCE_MIN);
-            channel.setSound(null, null);
-            channel.enableVibration(false);
-            channel.setShowBadge(false);
             NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
             if (manager != null) {
+                NotificationChannel channel = new NotificationChannel(CHANNEL, "消息常驻",
+                        NotificationManager.IMPORTANCE_LOW);
+                channel.setSound(null, null);
+                channel.enableVibration(false);
+                channel.setShowBadge(false);
+                channel.setDescription("保持后台连接，及时收到新消息通知");
                 manager.createNotificationChannel(channel);
+                try {
+                    manager.deleteNotificationChannel(CHANNEL_LEGACY);
+                } catch (Throwable ignore) {
+                }
             }
         }
+        // 见山：startForegroundService 之后 5 秒内必须 startForeground，
+        // 不能把预算花在 onStartCommand 之前，所以这里先占位。
+        showNotification();
+        notificationShown = true;
     }
 
     @Override
@@ -299,11 +327,10 @@ public final class JianshanResidentService extends Service {
             NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL)
                     .setSmallIcon(android.R.drawable.stat_notify_sync)
                     .setContentTitle("见山客户端")
-                    .setContentText("后台常驻中，收消息更及时")
-                    .setPriority(NotificationCompat.PRIORITY_MIN)
+                    .setContentText("消息常驻中，收消息更及时")
+                    .setPriority(NotificationCompat.PRIORITY_LOW)
                     .setContentIntent(content)
                     .setOngoing(true)
-                    .setSilent(true)
                     .setShowWhen(false)
                     .setOnlyAlertOnce(true)
                     .addAction(0, "取消", cancel);
