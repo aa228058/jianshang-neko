@@ -380,6 +380,8 @@ public class ApplicationLoader extends Application {
         if (JianshanLocalStore.isResidentEnabled()) {
             JianshanResidentService.start(this);
         }
+        // 见山：15 分钟一次的兜底任务，进程被 ROM 砍掉后由系统把常驻服务拉回来
+        JianshanResidentJob.schedule(this);
         LauncherIconController.tryFixLauncherIconIfNeeded();
         ProxyRotationController.init();
 
