@@ -23,6 +23,8 @@ public class AppStartReceiver extends BroadcastReceiver {
                     SharedConfig.saveConfig();
                 }
                 ApplicationLoader.startPushService();
+                // 见山：开机后把常驻服务一起拉起来
+                JianshanResidentService.startIfNeeded();
             });
         }
     }
