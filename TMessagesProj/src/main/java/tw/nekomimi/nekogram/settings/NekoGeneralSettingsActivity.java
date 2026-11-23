@@ -43,6 +43,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
     private final int jianshanInboxRow = rowId++;
     private final int jianshanAntiRevokeRow = rowId++;
     private final int jianshanResidentRow = rowId++;
+    private final int jianshanGuideRow = rowId++;
 
     private final int nameOrderRow = rowId++;
     private final int idTypeRow = rowId++;
@@ -165,6 +166,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
         items.add(UItem.asCheck(jianshanSaveRecalledRow, "保存被撤回/删除的消息").slug("jsSaveRecalled").setChecked(org.telegram.messenger.JianshanLocalStore.isSaveRecalledEnabled()));
         items.add(UItem.asButton(jianshanSavedListRow, "查看已保存消息").slug("jsSavedList"));
         items.add(UItem.asButton(jianshanInboxRow, "汇总（私聊未读 + @我/回复我的）").slug("jsInbox"));
+        items.add(UItem.asButton(jianshanGuideRow, "后台存活引导（白名单 / 自启动 / 通知）").slug("jsGuide"));
         items.add(UItem.asShadow("只保存在本机，不上传服务器。"));
 
 
@@ -221,6 +223,10 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
             if (view instanceof TextCheckCell) {
                 ((TextCheckCell) view).setChecked(next);
             }
+            return;
+        }
+        if (id == jianshanGuideRow) {
+            presentFragment(new tw.nekomimi.nekogram.settings.JianshanBackgroundGuideActivity());
             return;
         }
         if (id == jianshanInboxRow) {
