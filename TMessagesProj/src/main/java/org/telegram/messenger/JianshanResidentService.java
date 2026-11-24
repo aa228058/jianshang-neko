@@ -113,6 +113,20 @@ public final class JianshanResidentService extends Service {
                     nextNetWake[a] = now + netGap;
                 }
             }
+            {
+                StringBuilder line = new StringBuilder("[tick] screen=").append(screenOn);
+                for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
+                    try {
+                        if (!UserConfig.getInstance(a).isClientActivated()) {
+                            continue;
+                        }
+                        line.append(" #").append(a).append('=')
+                                .append(ConnectionsManager.getInstance(a).getConnectionState());
+                    } catch (Throwable ignore) {
+                    }
+                }
+                JianshanDiag.log(this, line.toString());
+            }
             armAlarm();
             if (!notificationShown || ++fgsRepostCounter >= FGS_REPOST_TICKS) {
                 fgsRepostCounter = 0;
@@ -207,6 +221,7 @@ public final class JianshanResidentService extends Service {
         super.onCreate();
         running = true;
         ApplicationLoader.postInitApplication();
+        JianshanDiag.log(this, "[svc] onCreate");
         mainHandler = new Handler(getMainLooper());
         thread = new HandlerThread("jianshan-resident");
         thread.start();
@@ -251,6 +266,7 @@ public final class JianshanResidentService extends Service {
             return START_NOT_STICKY;
         }
         killed = false;
+        JianshanDiag.log(this, "[svc] onStartCommand");
         maybePromptBattery();
         armAlarm();
         handler.removeCallbacks(tick);
@@ -262,6 +278,7 @@ public final class JianshanResidentService extends Service {
     public void onTaskRemoved(Intent rootIntent) {
         // 见山：从最近任务划掉时别让闹钟跟着丢，进程真被杀了也能靠它回来
         try {
+            JianshanDiag.log(this, "[svc] onTaskRemoved (被从最近任务划掉)");
             armAlarm();
             pokeNetwork();
         } catch (Throwable t) {
@@ -272,6 +289,7 @@ public final class JianshanResidentService extends Service {
 
     @Override
     public void onDestroy() {
+        JianshanDiag.log(this, "[svc] onDestroy");
         running = false;
         killed = true;
         if (handler != null) {
