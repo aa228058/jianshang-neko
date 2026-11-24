@@ -51,7 +51,7 @@ public final class JianshanResidentService extends Service {
     private static final long WAKE_LOCK_MS_ON = 3_000L;
     private static final long WAKE_LOCK_MS_OFF = 10_000L;
     /** Doze 兜底唤醒间隔（setAndAllowWhileIdle 在 Doze 下允许的最小粒度约 9 分钟） */
-    private static final long ALARM_INTERVAL_MS = 10 * 60 * 1000L;
+    private static final long ALARM_INTERVAL_MS = 3 * 60 * 1000L;
     /** 每 N 个 tick 复位一次前台服务通知（Android 13+ 可被用户划掉） */
     private static final int FGS_REPOST_TICKS = 10;
 
@@ -335,12 +335,16 @@ public final class JianshanResidentService extends Service {
             }
             PendingIntent pi = PendingIntent.getBroadcast(context, ALARM_REQUEST_CODE, intent, flags);
             long at = System.currentTimeMillis() + ALARM_INTERVAL_MS;
-            if (Build.VERSION.SDK_INT >= 23) {
+            if (Build.VERSION.SDK_INT >= 31 && am.canScheduleExactAlarms()) {
+                // 精确唤醒：HyperOS 冻结进程时，系统闹钟仍会被派发，这是唯一能穿透冻结的通道
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
+                JianshanDiag.log(context, "[alarm] armed EXACT in " + (ALARM_INTERVAL_MS / 60000) + "min");
+            } else if (Build.VERSION.SDK_INT >= 23) {
                 am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
+                JianshanDiag.log(context, "[alarm] armed idle in " + (ALARM_INTERVAL_MS / 60000) + "min");
             } else {
                 am.set(AlarmManager.RTC_WAKEUP, at, pi);
             }
-            JianshanDiag.log(context, "[alarm] armed next in " + (ALARM_INTERVAL_MS / 60000) + "min");
         } catch (Throwable t) {
             FileLog.e(t);
         }
