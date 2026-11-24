@@ -259,6 +259,14 @@ public final class JianshanDiag {
         sb.append("\n--- tick 间隔（被限速/冻结的铁证）---\n");
         sb.append(tickGapStats(context));
 
+        try {
+            android.app.AlarmManager am = (android.app.AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+            boolean canExact = Build.VERSION.SDK_INT < 31 || (am != null && am.canScheduleExactAlarms());
+            sb.append("精确闹钟可用: ").append(canExact).append('\n');
+        } catch (Throwable t) {
+            sb.append("精确闹钟读取失败: ").append(t).append('\n');
+        }
+
         sb.append("\n--- ROM ---\n");
         sb.append("MIUI/HyperOS: ").append(getProp("ro.miui.ui.version.name"))
                 .append(" HOS: ").append(getProp("ro.miui.ui.version.code"))
