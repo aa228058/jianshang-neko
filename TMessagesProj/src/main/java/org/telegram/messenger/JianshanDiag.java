@@ -256,6 +256,14 @@ public final class JianshanDiag {
             }
         }
 
+        sb.append("\n--- tick 间隔（被限速/冻结的铁证）---\n");
+        sb.append(tickGapStats(context));
+
+        sb.append("\n--- ROM ---\n");
+        sb.append("MIUI/HyperOS: ").append(getProp("ro.miui.ui.version.name"))
+                .append(" HOS: ").append(getProp("ro.miui.ui.version.code"))
+                .append(" 低内存机: ").append(isLowRam(context)).append('\n');
+
         sb.append("\n--- 最近进程死亡记录（决定是不是被系统杀的）---\n");
         sb.append(exitReasons(context));
 
@@ -263,6 +271,53 @@ public final class JianshanDiag {
         sb.append(tail(context, 220));
         sb.append("===== 报告结束 =====\n");
         return sb.toString();
+    }
+
+    /** 从日志里统计 tick 间隔：正常 15s（亮屏）/30s（熄屏），出现 40s+ 就是被系统限速/冻结 */
+    private static String tickGapStats(Context context) {
+        try {
+            String t = tail(context, 400);
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile("\\[tick\\].*?gap=(\\d+)s");
+            java.util.regex.Matcher m = p.matcher(t);
+            int n = 0, max = 0, late = 0;
+            while (m.find()) {
+                int g = Integer.parseInt(m.group(1));
+                if (g > max) {
+                    max = g;
+                }
+                if (g >= 40) {
+                    late++;
+                }
+                n++;
+            }
+            if (n == 0) {
+                return "  (日志里还没有 tick 间隔数据)\n";
+            }
+            return "  样本 " + n + " 条，最大间隔 " + max + "s，≥40s 的迟滞 " + late + " 次\n"
+                    + (max >= 40 ? "  → 进程被 CPU 冻结/限速过，后台必然掉消息\n" : "  → tick 节奏正常\n");
+        } catch (Throwable t) {
+            return "  (统计失败: " + t + ")\n";
+        }
+    }
+
+    private static String getProp(String key) {
+        try {
+            Class<?> c = Class.forName("android.os.SystemProperties");
+            java.lang.reflect.Method m = c.getMethod("get", String.class);
+            Object v = m.invoke(null, key);
+            return v == null ? "-" : v.toString();
+        } catch (Throwable t) {
+            return "-";
+        }
+    }
+
+    private static boolean isLowRam(Context context) {
+        try {
+            android.app.ActivityManager am = (android.app.ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+            return am != null && am.isLowRamDevice();
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
     private static String connectionText(int state) {
