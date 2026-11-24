@@ -24,6 +24,7 @@ public class JianshanResidentAlarmReceiver extends BroadcastReceiver {
             if (BuildVars.LOGS_ENABLED) {
                 FileLog.d("[jianshan-keepalive] alarm fired");
             }
+            JianshanDiag.log(context, "[alarm] fired");
             JianshanResidentService.startIfNeeded();
             JianshanResidentService.pokeNetwork();
         } catch (Throwable t) {
