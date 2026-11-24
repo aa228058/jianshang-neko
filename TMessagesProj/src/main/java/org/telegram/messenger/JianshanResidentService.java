@@ -1,5 +1,6 @@
 package org.telegram.messenger;
 
+import android.app.AlarmManager;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -9,6 +10,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.os.SystemClock;
@@ -20,40 +22,48 @@ import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.ui.LaunchActivity;
 
 /**
- * 见山客户端 · 常驻保活（移植自芒果的 MangoResidentService）
+ * 见山客户端 · 常驻保活（移植自芒果的 MangoResidentService，v-final29 修正版）
  *
- * 关键点：光挂前台服务没用，Telegram 在后台会把 MTProto 长连接 pause 掉。
- * 所以这里做三件事：
- *   1) 前台服务 + specialUse 类型（dataSync 在 Android 15 有每日时长预算，到点会被掐）；
- *   2) 周期性 ConnectionsManager.resumeNetworkMaybe()（亮屏 10s / 熄屏 30s 一次）；
- *   3) 连接看门狗：连续 4 跳没连上就 checkConnection() + resumeNetworkMaybe() 硬重连。
- * 唤醒锁只在"干活那一下"抓 3 秒，避免常驻持锁发烫。
+ * 三件事：
+ *   1) specialUse 前台服务 + onCreate 立刻 startForeground（抢 Android 8+ 的 5 秒预算）；
+ *   2) 独立 HandlerThread 上跑 tick：连接看门狗 + resumeNetworkMaybe，绝不占主线程；
+ *   3) AlarmManager.setAndAllowWhileIdle 十分钟一次兜底：Doze 里 CPU 被睡死时，
+ *      系统按闹钟把进程唤醒一次 → 抢 10 秒锁 + 全账号 resumeNetworkMaybe，把 socket 拉回来。
+ *
+ * 注意：v-final28 那两个改动（只在未连通时抢锁、每个 tick 构造 20 个 NotificationsController）
+ * 会让主线程被拖垮、并且 Doze 里 tick 直接停摆，表现为“进后台一会儿就没消息”，已全部回退。
  */
 public final class JianshanResidentService extends Service {
 
     private static final int NOTIFICATION_ID = 0x4a5253; // "JRS"
     private static final int BATTERY_NOTIFICATION_ID = 0x4a5254;
+    private static final int ALARM_REQUEST_CODE = 0x4a5256;
     private static final String CHANNEL = "jianshan_resident2";
+    private static final String BATTERY_CHANNEL = "jianshan_battery";
     /** 见山：v-final27 用过的旧通道（IMPORTANCE_MIN，创建后无法提升，只能删掉重建） */
     private static final String CHANNEL_LEGACY = "jianshan_resident";
-    private static final String BATTERY_CHANNEL = "jianshan_battery";
     private static final String ACTION_STOP = "jianshan.resident.stop";
 
-    private static final long TICK_SCREEN_ON = 5_000L;
+    private static final long TICK_SCREEN_ON = 15_000L;
     private static final long TICK_SCREEN_OFF = 30_000L;
-    private static final long NET_WAKE_GAP_ON = 10_000L;
+    private static final long NET_WAKE_GAP_ON = 15_000L;
     private static final long NET_WAKE_GAP_OFF = 30_000L;
-    private static final long WAKE_LOCK_MS = 3_000L;
+    private static final long WAKE_LOCK_MS_ON = 3_000L;
+    private static final long WAKE_LOCK_MS_OFF = 10_000L;
+    /** Doze 兜底唤醒间隔（setAndAllowWhileIdle 在 Doze 下允许的最小粒度约 9 分钟） */
+    private static final long ALARM_INTERVAL_MS = 10 * 60 * 1000L;
+    /** 每 N 个 tick 复位一次前台服务通知（Android 13+ 可被用户划掉） */
+    private static final int FGS_REPOST_TICKS = 10;
 
+    private HandlerThread thread;
     private Handler handler;
+    private Handler mainHandler;
     private PowerManager.WakeLock wakeLock;
     private final long[] nextNetWake = new long[UserConfig.MAX_ACCOUNT_COUNT];
     private final int[] deadTicks = new int[UserConfig.MAX_ACCOUNT_COUNT];
     private volatile boolean killed;
     private volatile boolean notificationShown;
     private int fgsRepostCounter;
-    /** 见山：每 N 个 tick 复位一次前台服务通知（Android 13+ 可被用户划掉） */
-    private static final int FGS_REPOST_TICKS = 10;
     private static volatile boolean running;
 
     private final Runnable tick = new Runnable() {
@@ -76,23 +86,24 @@ public final class JianshanResidentService extends Service {
                 }
                 try {
                     ConnectionsManager cm = ConnectionsManager.getInstance(a);
-                    if (cm.getConnectionState() == ConnectionsManager.ConnectionStateConnected) {
-                        deadTicks[a] = 0;
-                    } else if (++deadTicks[a] >= 4) {
-                        deadTicks[a] = 0;
-                        cm.checkConnection();
-                        cm.resumeNetworkMaybe();
-                        if (BuildVars.LOGS_ENABLED) {
-                            FileLog.d("[jianshan-keepalive] dead connection, force reconnect account=" + a);
+                    if (cm.getConnectionState() != ConnectionsManager.ConnectionStateConnected) {
+                        if (++deadTicks[a] >= 4) {
+                            deadTicks[a] = 0;
+                            cm.checkConnection();
+                            cm.resumeNetworkMaybe();
+                            if (BuildVars.LOGS_ENABLED) {
+                                FileLog.d("[jianshan-keepalive] dead connection, force reconnect account=" + a);
+                            }
                         }
+                    } else {
+                        deadTicks[a] = 0;
                     }
                 } catch (Throwable ignore) {
                 }
-                final boolean connected = deadTicks[a] == 0;
                 if (now >= nextNetWake[a]) {
-                    // 见山：只有没连上才抢锁；正常连着时不抢，避免被 ROM 判成高频唤醒而限流
-                    if (!connected && !woke && wakeLock != null) {
-                        wakeLock.acquire(WAKE_LOCK_MS);
+                    // 每次唤醒网络都抢一下锁：没有锁，熄屏/Doze 里这轮 tick 跑完 CPU 立刻睡，socket 就断粮
+                    if (!woke && wakeLock != null) {
+                        wakeLock.acquire(screenOn ? WAKE_LOCK_MS_ON : WAKE_LOCK_MS_OFF);
                         woke = true;
                     }
                     try {
@@ -102,21 +113,11 @@ public final class JianshanResidentService extends Service {
                     nextNetWake[a] = now + netGap;
                 }
             }
-            // 见山：把被节流/被延迟卡住的通知推一把（只有确实延迟中的通知才会动作）
-            for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
-                if (!UserConfig.getInstance(a).isClientActivated()) {
-                    continue;
-                }
-                try {
-                    NotificationsController.getInstance(a).jianshanNudgeDelayedNotification();
-                } catch (Throwable ignore) {
-                }
-            }
-            // 见山：Android 13+ 允许用户划掉 FGS 通知，定期复位，别让常驻通知凭空消失
+            armAlarm();
             if (!notificationShown || ++fgsRepostCounter >= FGS_REPOST_TICKS) {
                 fgsRepostCounter = 0;
-                showNotification();
                 notificationShown = true;
+                mainHandler.post(JianshanResidentService.this::showNotification);
             }
             handler.postDelayed(this, screenOn ? TICK_SCREEN_ON : TICK_SCREEN_OFF);
         }
@@ -170,12 +171,46 @@ public final class JianshanResidentService extends Service {
         }
     }
 
+    /** 见山：Doze 闹钟/开机广播用。抢 10 秒锁 + 全账号硬连一次，把睡死的 socket 拉回来 */
+    public static void pokeNetwork() {
+        Context context = ApplicationLoader.applicationContext;
+        if (context == null) {
+            return;
+        }
+        try {
+            PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+            if (pm != null) {
+                PowerManager.WakeLock lock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "jianshan:poke");
+                lock.setReferenceCounted(false);
+                lock.acquire(10_000);
+            }
+        } catch (Throwable ignore) {
+        }
+        for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
+            if (!UserConfig.getInstance(a).isClientActivated()) {
+                continue;
+            }
+            try {
+                ConnectionsManager cm = ConnectionsManager.getInstance(a);
+                cm.checkConnection();
+                cm.resumeNetworkMaybe();
+            } catch (Throwable ignore) {
+            }
+        }
+        if (BuildVars.LOGS_ENABLED) {
+            FileLog.d("[jianshan-keepalive] poke network");
+        }
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
         running = true;
         ApplicationLoader.postInitApplication();
-        handler = new Handler(getMainLooper());
+        mainHandler = new Handler(getMainLooper());
+        thread = new HandlerThread("jianshan-resident");
+        thread.start();
+        handler = new Handler(thread.getLooper());
         PowerManager power = (PowerManager) getSystemService(POWER_SERVICE);
         if (power != null) {
             wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "jianshan:resident");
@@ -197,10 +232,10 @@ public final class JianshanResidentService extends Service {
                 }
             }
         }
-        // 见山：startForegroundService 之后 5 秒内必须 startForeground，
-        // 不能把预算花在 onStartCommand 之前，所以这里先占位。
+        // 见山：startForegroundService 之后 5 秒内必须 startForeground，不能把预算花在 onStartCommand 之前
         showNotification();
         notificationShown = true;
+        armAlarm();
     }
 
     @Override
@@ -217,9 +252,22 @@ public final class JianshanResidentService extends Service {
         }
         killed = false;
         maybePromptBattery();
+        armAlarm();
         handler.removeCallbacks(tick);
         handler.post(tick);
         return START_STICKY;
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        // 见山：从最近任务划掉时别让闹钟跟着丢，进程真被杀了也能靠它回来
+        try {
+            armAlarm();
+            pokeNetwork();
+        } catch (Throwable t) {
+            FileLog.e(t);
+        }
+        super.onTaskRemoved(rootIntent);
     }
 
     @Override
@@ -228,6 +276,12 @@ public final class JianshanResidentService extends Service {
         killed = true;
         if (handler != null) {
             handler.removeCallbacks(tick);
+        }
+        if (thread != null) {
+            try {
+                thread.quitSafely();
+            } catch (Throwable ignore) {
+            }
         }
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
@@ -239,6 +293,31 @@ public final class JianshanResidentService extends Service {
     @Override
     public IBinder onBind(Intent intent) {
         return null;
+    }
+
+    /** 见山：Doze 兜底闹钟（setAndAllowWhileIdle 不需要任何特殊权限） */
+    private void armAlarm() {
+        try {
+            AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+            if (am == null) {
+                return;
+            }
+            Intent intent = new Intent(this, JianshanResidentAlarmReceiver.class)
+                    .setAction(JianshanResidentAlarmReceiver.ACTION_ALARM);
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= 23) {
+                flags |= PendingIntent.FLAG_IMMUTABLE;
+            }
+            PendingIntent pi = PendingIntent.getBroadcast(this, ALARM_REQUEST_CODE, intent, flags);
+            long at = System.currentTimeMillis() + ALARM_INTERVAL_MS;
+            if (Build.VERSION.SDK_INT >= 23) {
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
+            } else {
+                am.set(AlarmManager.RTC_WAKEUP, at, pi);
+            }
+        } catch (Throwable t) {
+            FileLog.e(t);
+        }
     }
 
     private static boolean isScreenOn() {
