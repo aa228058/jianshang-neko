@@ -27,6 +27,8 @@ public class JianshanResidentAlarmReceiver extends BroadcastReceiver {
             JianshanDiag.log(context, "[alarm] fired");
             JianshanResidentService.startIfNeeded();
             JianshanResidentService.pokeNetwork();
+            // 见山：响完立刻排下一次；tick 里不再 arm，否则每次 tick 都把闹钟推后 10 分钟、永远不响
+            JianshanResidentService.armNext(context);
         } catch (Throwable t) {
             FileLog.e(t);
         }
