@@ -44,6 +44,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
     private final int jianshanAntiRevokeRow = rowId++;
     private final int jianshanResidentRow = rowId++;
     private final int jianshanGuideRow = rowId++;
+    private final int jianshanDiagRow = rowId++;
 
     private final int nameOrderRow = rowId++;
     private final int idTypeRow = rowId++;
@@ -167,6 +168,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
         items.add(UItem.asButton(jianshanSavedListRow, "查看已保存消息").slug("jsSavedList"));
         items.add(UItem.asButton(jianshanInboxRow, "汇总（私聊未读 + @我/回复我的）").slug("jsInbox"));
         items.add(UItem.asButton(jianshanGuideRow, "后台存活引导（白名单 / 自启动 / 通知）").slug("jsGuide"));
+        items.add(UItem.asButton(jianshanDiagRow, "后台诊断（复制报告给我）").slug("jsDiag"));
         items.add(UItem.asShadow("只保存在本机，不上传服务器。"));
 
 
@@ -222,6 +224,21 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
             org.telegram.messenger.JianshanLocalStore.setSaveRecalledEnabled(next);
             if (view instanceof TextCheckCell) {
                 ((TextCheckCell) view).setChecked(next);
+            }
+            return;
+        }
+        if (id == jianshanDiagRow) {
+            android.app.Activity act = getParentActivity();
+            if (act != null) {
+                String report = org.telegram.messenger.JianshanDiag.copyReportToClipboard(act);
+                android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(act)
+                        .setTitle("后台诊断（完整内容已复制）")
+                        .setMessage(report.length() > 3500
+                                ? report.substring(0, 3500) + "\n…（后面的直接粘贴给我）"
+                                : report)
+                        .setPositiveButton("关闭", null)
+                        .create();
+                dialog.show();
             }
             return;
         }
