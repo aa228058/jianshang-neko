@@ -45,13 +45,16 @@ public final class JianshanResidentService extends Service {
     private static final String ACTION_STOP = "jianshan.resident.stop";
 
     private static final long TICK_SCREEN_ON = 15_000L;
-    private static final long TICK_SCREEN_OFF = 30_000L;
+    private static final long TICK_SCREEN_OFF = 60_000L;
     private static final long NET_WAKE_GAP_ON = 15_000L;
     private static final long NET_WAKE_GAP_OFF = 30_000L;
     private static final long WAKE_LOCK_MS_ON = 3_000L;
     private static final long WAKE_LOCK_MS_OFF = 10_000L;
     /** Doze 兜底唤醒间隔（setAndAllowWhileIdle 在 Doze 下允许的最小粒度约 9 分钟） */
-    private static final long ALARM_INTERVAL_MS = 3 * 60 * 1000L;
+    private static final long ALARM_INTERVAL_ON_MS = 3 * 60 * 1000L;
+    /** 熄屏/后台被冻结时靠这个把进程叫醒；60 秒一次是"能收到消息"和"别太耗电"的折中 */
+    private static final long ALARM_INTERVAL_OFF_MS = 60 * 1000L;
+    private static final long ALARM_INTERVAL_MS = ALARM_INTERVAL_OFF_MS;
     /** 每 N 个 tick 复位一次前台服务通知（Android 13+ 可被用户划掉） */
     private static final int FGS_REPOST_TICKS = 10;
 
@@ -334,14 +337,15 @@ public final class JianshanResidentService extends Service {
                 flags |= PendingIntent.FLAG_IMMUTABLE;
             }
             PendingIntent pi = PendingIntent.getBroadcast(context, ALARM_REQUEST_CODE, intent, flags);
-            long at = System.currentTimeMillis() + ALARM_INTERVAL_MS;
+            final long interval = isScreenOn() ? ALARM_INTERVAL_ON_MS : ALARM_INTERVAL_OFF_MS;
+            long at = System.currentTimeMillis() + interval;
             if (Build.VERSION.SDK_INT >= 31 && am.canScheduleExactAlarms()) {
                 // 精确唤醒：HyperOS 冻结进程时，系统闹钟仍会被派发，这是唯一能穿透冻结的通道
                 am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
-                JianshanDiag.log(context, "[alarm] armed EXACT in " + (ALARM_INTERVAL_MS / 60000) + "min");
+                JianshanDiag.log(context, "[alarm] armed EXACT in " + (interval / 1000) + "s");
             } else if (Build.VERSION.SDK_INT >= 23) {
                 am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
-                JianshanDiag.log(context, "[alarm] armed idle in " + (ALARM_INTERVAL_MS / 60000) + "min");
+                JianshanDiag.log(context, "[alarm] armed idle in " + (interval / 1000) + "s");
             } else {
                 am.set(AlarmManager.RTC_WAKEUP, at, pi);
             }
