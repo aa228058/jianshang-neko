@@ -133,14 +133,14 @@ public final class JianshanDiag {
             if (am == null) {
                 return "(取不到 ActivityManager)";
             }
-            java.util.List<ActivityManager.ApplicationExitInfo> list =
+            java.util.List<android.app.ApplicationExitInfo> list =
                     am.getHistoricalProcessExitReasons(context.getPackageName(), 0, 8);
             if (list == null || list.isEmpty()) {
                 return "(没有进程死亡记录 = 进程一直是活的)";
             }
             StringBuilder sb = new StringBuilder();
             SimpleDateFormat fmt = new SimpleDateFormat("MM-dd HH:mm:ss", Locale.US);
-            for (ActivityManager.ApplicationExitInfo info : list) {
+            for (android.app.ApplicationExitInfo info : list) {
                 sb.append("  ").append(fmt.format(new Date(info.getTimestamp())))
                         .append(" reason=").append(reasonText(info.getReason()))
                         .append(" status=").append(info.getStatus())
@@ -155,27 +155,27 @@ public final class JianshanDiag {
 
     private static String reasonText(int reason) {
         switch (reason) {
-            case ActivityManager.ApplicationExitInfo.REASON_EXIT_SELF:
+            case android.app.ApplicationExitInfo.REASON_EXIT_SELF:
                 return "正常退出(EXIT_SELF)";
-            case ActivityManager.ApplicationExitInfo.REASON_SIGNALED:
+            case android.app.ApplicationExitInfo.REASON_SIGNALED:
                 return "被信号杀(SIGNALED)";
-            case ActivityManager.ApplicationExitInfo.REASON_LOW_MEMORY:
+            case android.app.ApplicationExitInfo.REASON_LOW_MEMORY:
                 return "内存不足(LOW_MEMORY)";
-            case ActivityManager.ApplicationExitInfo.REASON_CRASH:
+            case android.app.ApplicationExitInfo.REASON_CRASH:
                 return "崩溃(CRASH)";
-            case ActivityManager.ApplicationExitInfo.REASON_CRASH_NATIVE:
+            case android.app.ApplicationExitInfo.REASON_CRASH_NATIVE:
                 return "原生崩溃(CRASH_NATIVE)";
-            case ActivityManager.ApplicationExitInfo.REASON_ANR:
+            case android.app.ApplicationExitInfo.REASON_ANR:
                 return "无响应(ANR)";
-            case ActivityManager.ApplicationExitInfo.REASON_INITIALIZATION_FAILURE:
+            case android.app.ApplicationExitInfo.REASON_INITIALIZATION_FAILURE:
                 return "初始化失败";
-            case ActivityManager.ApplicationExitInfo.REASON_PERMISSION_CHANGE:
+            case android.app.ApplicationExitInfo.REASON_PERMISSION_CHANGE:
                 return "权限变更";
-            case ActivityManager.ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE:
+            case android.app.ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE:
                 return "资源占用过高被系统杀(EXCESSIVE_RESOURCE_USAGE)";
-            case ActivityManager.ApplicationExitInfo.REASON_USER_REQUESTED:
+            case android.app.ApplicationExitInfo.REASON_USER_REQUESTED:
                 return "用户/清理器主动结束(USER_REQUESTED)";
-            case ActivityManager.ApplicationExitInfo.REASON_OTHER:
+            case android.app.ApplicationExitInfo.REASON_OTHER:
                 return "OTHER";
             default:
                 return String.valueOf(reason);
