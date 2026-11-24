@@ -328,6 +328,48 @@ public final class JianshanDiag {
         }
     }
 
+
+    private static volatile boolean watchdogStarted;
+
+    /**
+     * 主线程卡顿看门狗：每 2 秒往主线程 post 一个空任务，
+     * 到点还没被执行就说明主线程被卡住了 —— 直接写进日志，下次查 ANR 有据可依。
+     */
+    public static void startMainThreadWatchdog(final Context context) {
+        if (watchdogStarted || context == null) {
+            return;
+        }
+        watchdogStarted = true;
+        try {
+            Thread t = new Thread(() -> {
+                android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+                int stalled = 0;
+                while (true) {
+                    final long[] ran = new long[1];
+                    final long postedAt = SystemClock.elapsedRealtime();
+                    main.post(() -> ran[0] = SystemClock.elapsedRealtime());
+                    try {
+                        Thread.sleep(2000);
+                    } catch (InterruptedException e) {
+                        return;
+                    }
+                    long now = SystemClock.elapsedRealtime();
+                    if (ran[0] == 0) {
+                        stalled++;
+                        if (stalled <= 20) {
+                            log(context, "[anr] 主线程卡住 >" + (now - postedAt) + "ms");
+                        }
+                    } else {
+                        stalled = 0;
+                    }
+                }
+            }, "jianshan-anr");
+            t.setDaemon(true);
+            t.start();
+        } catch (Throwable ignore) {
+        }
+    }
+
     private static String connectionText(int state) {
         switch (state) {
             case ConnectionsManager.ConnectionStateWaitingForNetwork:
