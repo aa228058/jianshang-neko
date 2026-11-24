@@ -64,6 +64,7 @@ public final class JianshanResidentService extends Service {
     private volatile boolean killed;
     private volatile boolean notificationShown;
     private int fgsRepostCounter;
+    private long lastTickAt;
     private static volatile boolean running;
 
     private final Runnable tick = new Runnable() {
@@ -86,8 +87,9 @@ public final class JianshanResidentService extends Service {
                 }
                 try {
                     ConnectionsManager cm = ConnectionsManager.getInstance(a);
-                    if (cm.getConnectionState() != ConnectionsManager.ConnectionStateConnected) {
-                        if (++deadTicks[a] >= 4) {
+                    if (cm.getConnectionState() != ConnectionsManager.ConnectionStateConnected
+                            || cm.getPauseTime() != 0) {
+                        if (++deadTicks[a] >= 2) {
                             deadTicks[a] = 0;
                             cm.checkConnection();
                             cm.resumeNetworkMaybe();
@@ -114,7 +116,10 @@ public final class JianshanResidentService extends Service {
                 }
             }
             {
-                StringBuilder line = new StringBuilder("[tick] screen=").append(screenOn);
+                final long gap = lastTickAt == 0 ? 0 : (now - lastTickAt);
+                lastTickAt = now;
+                StringBuilder line = new StringBuilder("[tick] screen=").append(screenOn)
+                        .append(" gap=").append(gap / 1000).append('s');
                 for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
                     try {
                         if (!UserConfig.getInstance(a).isClientActivated()) {
@@ -127,7 +132,6 @@ public final class JianshanResidentService extends Service {
                 }
                 JianshanDiag.log(JianshanResidentService.this, line.toString());
             }
-            armAlarm();
             if (!notificationShown || ++fgsRepostCounter >= FGS_REPOST_TICKS) {
                 fgsRepostCounter = 0;
                 notificationShown = true;
@@ -313,29 +317,38 @@ public final class JianshanResidentService extends Service {
         return null;
     }
 
-    /** 见山：Doze 兜底闹钟（setAndAllowWhileIdle 不需要任何特殊权限） */
-    private void armAlarm() {
+    /** 见山：只排下一次闹钟（tick 里绝不调用，否则会无限推后） */
+    public static void armNext(Context context) {
+        if (context == null) {
+            return;
+        }
         try {
-            AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+            AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
             if (am == null) {
                 return;
             }
-            Intent intent = new Intent(this, JianshanResidentAlarmReceiver.class)
+            Intent intent = new Intent(context, JianshanResidentAlarmReceiver.class)
                     .setAction(JianshanResidentAlarmReceiver.ACTION_ALARM);
             int flags = PendingIntent.FLAG_UPDATE_CURRENT;
             if (Build.VERSION.SDK_INT >= 23) {
                 flags |= PendingIntent.FLAG_IMMUTABLE;
             }
-            PendingIntent pi = PendingIntent.getBroadcast(this, ALARM_REQUEST_CODE, intent, flags);
+            PendingIntent pi = PendingIntent.getBroadcast(context, ALARM_REQUEST_CODE, intent, flags);
             long at = System.currentTimeMillis() + ALARM_INTERVAL_MS;
             if (Build.VERSION.SDK_INT >= 23) {
                 am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
             } else {
                 am.set(AlarmManager.RTC_WAKEUP, at, pi);
             }
+            JianshanDiag.log(context, "[alarm] armed next in " + (ALARM_INTERVAL_MS / 60000) + "min");
         } catch (Throwable t) {
             FileLog.e(t);
         }
+    }
+
+    /** 见山：Doze 兜底闹钟（setAndAllowWhileIdle 不需要任何特殊权限） */
+    private void armAlarm() {
+        armNext(this);
     }
 
     private static boolean isScreenOn() {
