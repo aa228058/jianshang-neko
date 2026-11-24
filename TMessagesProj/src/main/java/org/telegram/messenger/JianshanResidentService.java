@@ -125,7 +125,7 @@ public final class JianshanResidentService extends Service {
                     } catch (Throwable ignore) {
                     }
                 }
-                JianshanDiag.log(this, line.toString());
+                JianshanDiag.log(JianshanResidentService.this, line.toString());
             }
             armAlarm();
             if (!notificationShown || ++fgsRepostCounter >= FGS_REPOST_TICKS) {
