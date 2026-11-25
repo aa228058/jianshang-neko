@@ -47,6 +47,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
     private final int jianshanDiagRow = rowId++;
     private final int jianshanClearDiagRow = rowId++;
     private final int jianshanTrimSavedRow = rowId++;
+    private final int jianshanLowMemRow = rowId++;
 
     private final int nameOrderRow = rowId++;
     private final int idTypeRow = rowId++;
@@ -173,6 +174,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
         items.add(UItem.asButton(jianshanDiagRow, "后台诊断（复制报告给我）").slug("jsDiag"));
         items.add(UItem.asButton(jianshanClearDiagRow, "清空诊断日志（重新开始记录）").slug("jsClearDiag"));
         items.add(UItem.asButton(jianshanTrimSavedRow, "压缩已保存消息（只留最近 800 条）").slug("jsTrimSaved"));
+        items.add(UItem.asCheck(jianshanLowMemRow, "低内存模式（后台每分钟清图/少占内存）").slug("jsLowMem").setChecked(org.telegram.messenger.JianshanLocalStore.isLowMemMode()));
         items.add(UItem.asShadow("只保存在本机，不上传服务器。"));
 
 
@@ -226,6 +228,14 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
         if (id == jianshanSaveRecalledRow) {
             boolean next = !org.telegram.messenger.JianshanLocalStore.isSaveRecalledEnabled();
             org.telegram.messenger.JianshanLocalStore.setSaveRecalledEnabled(next);
+            if (view instanceof TextCheckCell) {
+                ((TextCheckCell) view).setChecked(next);
+            }
+            return;
+        }
+        if (id == jianshanLowMemRow) {
+            boolean next = !org.telegram.messenger.JianshanLocalStore.isLowMemMode();
+            org.telegram.messenger.JianshanLocalStore.setLowMemMode(next);
             if (view instanceof TextCheckCell) {
                 ((TextCheckCell) view).setChecked(next);
             }
