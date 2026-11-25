@@ -404,9 +404,12 @@ public final class JianshanResidentService extends Service {
                 flags |= PendingIntent.FLAG_IMMUTABLE;
             }
             PendingIntent pi = PendingIntent.getBroadcast(context, ALARM_REQUEST_CODE, intent, flags);
-            final boolean aggressive = SystemClock.elapsedRealtime() < aggressiveUntil;
+            // 见山：熄屏时一律走 setAlarmClock —— 这台机器上 MIUI 连 setExactAndAllowWhileIdle
+            // 都会推迟到 288 秒，只有闹钟类（AlarmClock）不敢推。
+            final boolean screen = isScreenOn();
+            final boolean aggressive = !screen || SystemClock.elapsedRealtime() < aggressiveUntil;
             final long interval = aggressive ? 60_000L
-                    : (isScreenOn() ? ALARM_INTERVAL_ON_MS : ALARM_INTERVAL_OFF_MS);
+                    : ALARM_INTERVAL_ON_MS;
             long at = System.currentTimeMillis() + interval;
             if (aggressive) {
                 // setAlarmClock 的优先级高于普通精确闹钟，厂商基本不敢推迟（代价：状态栏出现闹钟图标）
