@@ -11684,4 +11684,5 @@
     <string name="FpnvConsentSimSlot">SIM Slot</string>
     <string name="FpnvConsentSimSlotValue">SIM %1$d</string>
     <string name="FpnvConsentPhoneNumber">Phone Number</string>
+    <string name="JianshanAccessibilityDesc">开启后系统会把见山客户端当作辅助工具进程，后台更不容易被清理。此服务不读取屏幕内容、不监听输入，仅用于提升进程优先级。</string>
 </resources>
