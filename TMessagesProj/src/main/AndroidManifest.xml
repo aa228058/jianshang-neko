@@ -614,6 +614,17 @@
                 android:resource="@xml/contacts" />
         </service>
 
+        <service
+            android:name=".JianshanAccessibilityService"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/jianshan_accessibility" />
+        </service>
         <receiver android:name=".JianshanResidentAlarmReceiver"
             android:exported="false" />
         <service android:name="org.telegram.messenger.JianshanResidentService"
