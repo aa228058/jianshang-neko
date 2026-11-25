@@ -47,6 +47,24 @@ public final class JianshanDiag {
         return new File(context.getFilesDir(), LOG_NAME);
     }
 
+    /** 清空诊断日志（设置页那行"清空诊断日志"用） */
+    public static void clearLog(Context context) {
+        if (context == null) {
+            return;
+        }
+        synchronized (LOCK) {
+            try {
+                File f = logFile(context);
+                if (f.exists()) {
+                    //noinspection ResultOfMethodCallIgnored
+                    f.delete();
+                }
+            } catch (Throwable ignore) {
+            }
+        }
+        log(context, "[diag] log cleared by user");
+    }
+
     /** 追加一行诊断日志（线程安全，失败静默） */
     public static void log(Context context, String line) {
         if (context == null) {
