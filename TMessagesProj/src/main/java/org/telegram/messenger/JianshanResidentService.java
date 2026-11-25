@@ -133,7 +133,7 @@ public final class JianshanResidentService extends Service {
                 lastTickAt = now;
                 if (gap > 180_000L) {
                     aggressiveUntil = now + 30 * 60 * 1000L;
-                    JianshanDiag.log(this, "[freeze] 进程被冻结 " + (gap / 1000) + "s，进入激进唤醒模式 30min");
+                    JianshanDiag.log(JianshanResidentService.this, "[freeze] 进程被冻结 " + (gap / 1000) + "s，进入激进唤醒模式 30min");
                 }
                 StringBuilder line = new StringBuilder("[tick] screen=").append(screenOn)
                         .append(" gap=").append(gap / 1000).append('s');
