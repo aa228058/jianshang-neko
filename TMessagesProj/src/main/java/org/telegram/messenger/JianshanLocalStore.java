@@ -180,11 +180,71 @@ public final class JianshanLocalStore {
             if (p.contains(key)) {
                 return;
             }
+            int count = p.getInt("saved_count", 0) + 1;
             p.edit()
                     .putString(key, value)
-                    .putInt("saved_count", Math.min(MAX_SAVED, p.getInt("saved_count", 0) + 1))
+                    .putInt("saved_count", count)
                     .apply();
+            if (count > MAX_SAVED) {
+                trimSavedLocked(p);
+            }
         });
+    }
+
+    /** 见山：已保存消息的总条数（SharedPreferences 全量驻留内存，必须设上限） */
+    public static int savedCount() {
+        try {
+            return prefs().getInt("saved_count", 0);
+        } catch (Throwable t) {
+            return 0;
+        }
+    }
+
+    /**
+     * 见山：压缩已保存消息 —— 只保留最近 MAX_SAVED 条。
+     * 之前只记了 saved_count 这个数字，从来没真删过，条目会无限增长；
+     * 而 SharedPreferences 是把整个文件读进内存的 Map，条目一多就吃掉几百 MB 堆。
+     */
+    public static void trimSavedAsync() {
+        writeAsync(p -> trimSavedLocked(p));
+    }
+
+    private static void trimSavedLocked(SharedPreferences p) {
+        int count = p.getInt("saved_count", 0);
+        if (count <= MAX_SAVED) {
+            return;
+        }
+        HashMap<String, Integer> dates = new HashMap<>();
+        for (java.util.Map.Entry<String, ?> e : p.getAll().entrySet()) {
+            String k = e.getKey();
+            if (!k.startsWith("saved_") || !(e.getValue() instanceof String)) {
+                continue;
+            }
+            String v = (String) e.getValue();
+            String[] parts = v.split("\u0001", 4);
+            int date = 0;
+            if (parts.length >= 2) {
+                try {
+                    date = Integer.parseInt(parts[1]);
+                } catch (NumberFormatException ignore) {
+                }
+            }
+            dates.put(k, date);
+        }
+        java.util.List<java.util.Map.Entry<String, Integer>> list = new ArrayList<>(dates.entrySet());
+        list.sort((a, b) -> Integer.compare(a.getValue(), b.getValue()));
+        int keep = MAX_SAVED * 8 / 10;
+        SharedPreferences.Editor ed = p.edit();
+        int removed = 0;
+        for (int i = 0; i < list.size() && list.size() - i > keep; i++) {
+            ed.remove(list.get(i).getKey());
+            removed++;
+        }
+        int left = Math.min(MAX_SAVED, Math.max(0, list.size() - removed));
+        ed.putInt("saved_count", left);
+        ed.apply();
+        JianshanDiag.log(ApplicationLoader.applicationContext,
+                "[store] trimmed saved messages: removed=" + removed + " left=" + left);
     }
 
     /** 返回 [dialogId, date, text] 三元组列表，按时间倒序。只给界面手动调用，可以慢。 */
