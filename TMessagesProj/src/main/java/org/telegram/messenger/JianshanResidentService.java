@@ -94,8 +94,11 @@ public final class JianshanResidentService extends Service {
                             || cm.getPauseTime() != 0) {
                         if (++deadTicks[a] >= 2) {
                             deadTicks[a] = 0;
+                            // 硬重置：pause + resume(false) 会重建到所有 DC（含代理）的连接，
+                            // 比只调 resumeNetworkMaybe 更能从 ConnectingToProxy(4) 里挣脱
+                            ConnectionsManager.native_pauseNetwork(a);
+                            ConnectionsManager.native_resumeNetwork(a, false);
                             cm.checkConnection();
-                            cm.resumeNetworkMaybe();
                             if (BuildVars.LOGS_ENABLED) {
                                 FileLog.d("[jianshan-keepalive] dead connection, force reconnect account=" + a);
                             }
@@ -227,17 +230,7 @@ public final class JianshanResidentService extends Service {
     public void onCreate() {
         super.onCreate();
         running = true;
-        ApplicationLoader.postInitApplication();
-        JianshanDiag.log(this, "[svc] onCreate");
         mainHandler = new Handler(getMainLooper());
-        thread = new HandlerThread("jianshan-resident");
-        thread.start();
-        handler = new Handler(thread.getLooper());
-        PowerManager power = (PowerManager) getSystemService(POWER_SERVICE);
-        if (power != null) {
-            wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "jianshan:resident");
-            wakeLock.setReferenceCounted(false);
-        }
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
             if (manager != null) {
@@ -254,9 +247,31 @@ public final class JianshanResidentService extends Service {
                 }
             }
         }
-        // 见山：startForegroundService 之后 5 秒内必须 startForeground，不能把预算花在 onStartCommand 之前
+        // 见山：startForegroundService 之后 5 秒内必须 startForeground。
+        // 闹钟冷启动进程时，postInitApplication 很慢，先抢前台再去做重活，
+        // 否则会被系统判超时杀进程（死亡记录里的 reason=CRASH 就是它）。
         showNotification();
         notificationShown = true;
+        JianshanDiag.log(this, "[svc] onCreate (foreground ok)");
+        JianshanDiag.installCrashHandler(getApplicationContext());
+        thread = new HandlerThread("jianshan-resident");
+        thread.start();
+        handler = new Handler(thread.getLooper());
+        PowerManager power = (PowerManager) getSystemService(POWER_SERVICE);
+        if (power != null) {
+            wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "jianshan:resident");
+            wakeLock.setReferenceCounted(false);
+        }
+        final Thread initThread = new Thread(() -> {
+            try {
+                ApplicationLoader.postInitApplication();
+            } catch (Throwable t) {
+                FileLog.e(t);
+            }
+            JianshanDiag.log(JianshanResidentService.this, "[svc] init done");
+        }, "jianshan-init");
+        initThread.setPriority(Thread.MIN_PRIORITY);
+        initThread.start();
         armAlarm();
     }
 
