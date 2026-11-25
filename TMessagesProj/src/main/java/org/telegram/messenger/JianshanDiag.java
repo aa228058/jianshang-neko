@@ -283,6 +283,14 @@ public final class JianshanDiag {
             sb.append("设备内存读取失败: ").append(t).append('\n');
         }
 
+        try {
+            java.io.File prefs = new java.io.File(context.getFilesDir().getParentFile(), "shared_prefs/jianshan_local.xml");
+            sb.append("jianshan_local.xml: ").append(prefs.exists() ? (prefs.length() / 1024 + " KB") : "不存在").append('\n');
+            sb.append("已保存消息条数: ").append(JianshanLocalStore.savedCount()).append('\n');
+        } catch (Throwable t) {
+            sb.append("本地存储统计失败: ").append(t).append('\n');
+        }
+
         sb.append("\n--- 通知状态 ---\n");
         try {
             sb.append("通知总开关: ").append(NotificationManagerCompat.from(context).areNotificationsEnabled()).append('\n');
