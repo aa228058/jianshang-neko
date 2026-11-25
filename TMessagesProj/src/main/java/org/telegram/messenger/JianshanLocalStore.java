@@ -166,6 +166,11 @@ public final class JianshanLocalStore {
 
     private static final int MAX_SAVED = 800;
 
+    /** 见山：待落盘的保存消息（批量合并，避免每条消息都重写整份 xml） */
+    private static final java.util.LinkedHashMap<String, String> PENDING_SAVES = new java.util.LinkedHashMap<>();
+    private static volatile boolean saveFlushScheduled;
+    private static volatile long lastTrimAt;
+
     public static void saveMessage(TLRPC.Message message, long dialogId) {
         if (message == null || !isSaveRecalledEnabled()) {
             return;
@@ -176,20 +181,66 @@ public final class JianshanLocalStore {
         }
         final String key = "saved_" + message.id;
         final String value = dialogId + "\u0001" + message.date + "\u0001" + message.from_id + "\u0001" + text.replace('\n', ' ');
-        writeAsync(p -> {
-            if (p.contains(key)) {
+        synchronized (PENDING_SAVES) {
+            PENDING_SAVES.put(key, value);
+            if (saveFlushScheduled) {
                 return;
             }
-            int count = p.getInt("saved_count", 0) + 1;
-            p.edit()
-                    .putString(key, value)
-                    .putInt("saved_count", count)
-                    .apply();
-            // 见山：加 200 条滞后，避免每来一条新消息就全量扫描 + 整份重写
-            if (count > MAX_SAVED + 200) {
+            saveFlushScheduled = true;
+        }
+        try {
+            io().execute(() -> {
+                try {
+                    Thread.sleep(2000);
+                } catch (InterruptedException ignore) {
+                }
+                flushPendingSaves();
+            });
+        } catch (Throwable t) {
+            synchronized (PENDING_SAVES) {
+                saveFlushScheduled = false;
+            }
+        }
+    }
+
+    /** 把攒下来的消息一次性写盘，并顺手做一次上限检查 */
+    private static void flushPendingSaves() {
+        java.util.LinkedHashMap<String, String> batch;
+        synchronized (PENDING_SAVES) {
+            if (PENDING_SAVES.isEmpty()) {
+                saveFlushScheduled = false;
+                return;
+            }
+            batch = new java.util.LinkedHashMap<>(PENDING_SAVES);
+            PENDING_SAVES.clear();
+            saveFlushScheduled = false;
+        }
+        try {
+            SharedPreferences p = prefs();
+            SharedPreferences.Editor ed = p.edit();
+            int added = 0;
+            for (java.util.Map.Entry<String, String> e : batch.entrySet()) {
+                if (p.contains(e.getKey())) {
+                    continue;
+                }
+                ed.putString(e.getKey(), e.getValue());
+                added++;
+            }
+            if (added == 0) {
+                return;
+            }
+            int count = p.getInt("saved_count", 0) + added;
+            ed.putInt("saved_count", count);
+            ed.apply();
+            // 见山：只有明显超限才压，且 10 分钟内最多压一次（原来几乎每分钟都全量重写）
+            long now = android.os.SystemClock.elapsedRealtime();
+            if (count > MAX_SAVED * 2 && now - lastTrimAt > 10 * 60 * 1000L) {
+                lastTrimAt = now;
                 trimSavedLocked(p);
             }
-        });
+        } catch (Throwable t) {
+            FileLog.e(t);
+        }
     }
 
     /** 见山：已保存消息的总条数（SharedPreferences 全量驻留内存，必须设上限） */
