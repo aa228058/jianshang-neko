@@ -68,6 +68,8 @@ public final class JianshanResidentService extends Service {
     private volatile boolean notificationShown;
     private int fgsRepostCounter;
     private long lastTickAt;
+    private long lastMemCleanAt;
+    private int memLogCounter;
     /** 见山：检测到长时间冻结后，进入 30 分钟"激进模式"，用 setAlarmClock 抢唤醒 */
     private static volatile long aggressiveUntil;
     private static volatile boolean running;
@@ -148,6 +150,26 @@ public final class JianshanResidentService extends Service {
                     }
                 }
                 JianshanDiag.log(JianshanResidentService.this, line.toString());
+            }
+            // 见山：这台机器把 MIUI 电量与性能服务禁用了，系统不再帮我们回收图片/表情缓存，
+            // 堆会一路涨到 512MB 上限然后 OOM 卡死。所以这里自己做：后台每 5 分钟清一次图片内存缓存，
+            // 堆占用超过 85% 立刻清；每 8 个 tick 打一行 [mem] 方便看增长曲线。
+            try {
+                long used = JianshanDiag.heapUsed();
+                long max = JianshanDiag.heapMax();
+                if (++memLogCounter >= 8) {
+                    memLogCounter = 0;
+                    JianshanDiag.log(JianshanResidentService.this, "[mem] " + JianshanDiag.heapStats());
+                }
+                boolean lowHeap = max > 0 && used * 100 / max >= 85;
+                boolean timeToClean = !screenOn && now - lastMemCleanAt > 5 * 60 * 1000L;
+                if (lowHeap || timeToClean) {
+                    lastMemCleanAt = now;
+                    ImageLoader.getInstance().clearMemory();
+                    JianshanDiag.log(JianshanResidentService.this,
+                            "[mem] cleared image cache (" + (lowHeap ? "low heap" : "screen off") + ") " + JianshanDiag.heapStats());
+                }
+            } catch (Throwable ignore) {
             }
             if (!notificationShown || ++fgsRepostCounter >= FGS_REPOST_TICKS) {
                 fgsRepostCounter = 0;
