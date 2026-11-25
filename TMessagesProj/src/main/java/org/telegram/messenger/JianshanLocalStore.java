@@ -185,7 +185,8 @@ public final class JianshanLocalStore {
                     .putString(key, value)
                     .putInt("saved_count", count)
                     .apply();
-            if (count > MAX_SAVED) {
+            // 见山：加 200 条滞后，避免每来一条新消息就全量扫描 + 整份重写
+            if (count > MAX_SAVED + 200) {
                 trimSavedLocked(p);
             }
         });
@@ -211,7 +212,7 @@ public final class JianshanLocalStore {
 
     private static void trimSavedLocked(SharedPreferences p) {
         int count = p.getInt("saved_count", 0);
-        if (count <= MAX_SAVED) {
+        if (count <= MAX_SAVED + 100) {
             return;
         }
         HashMap<String, Integer> dates = new HashMap<>();
