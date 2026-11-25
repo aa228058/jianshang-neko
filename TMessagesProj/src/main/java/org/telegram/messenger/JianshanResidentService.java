@@ -170,7 +170,8 @@ public final class JianshanResidentService extends Service {
                     JianshanDiag.log(JianshanResidentService.this, "[mem] " + JianshanDiag.heapStats());
                 }
                 boolean lowHeap = max > 0 && used * 100 / max >= 85;
-                boolean timeToClean = !screenOn && now - lastMemCleanAt > 5 * 60 * 1000L;
+                final long cleanGap = JianshanLocalStore.isLowMemMode() ? 60_000L : 5 * 60 * 1000L;
+                boolean timeToClean = !screenOn && now - lastMemCleanAt > cleanGap;
                 if (lowHeap || timeToClean) {
                     lastMemCleanAt = now;
                     ImageLoader.getInstance().clearMemory();
@@ -346,6 +347,8 @@ public final class JianshanResidentService extends Service {
         // 见山：从最近任务划掉时别让闹钟跟着丢，进程真被杀了也能靠它回来
         try {
             JianshanDiag.log(this, "[svc] onTaskRemoved (被从最近任务划掉)");
+            // 见山：被划掉就把图片缓存清掉，减少下次切回来的页错误/重载
+            ImageLoader.getInstance().clearMemory();
             armAlarm();
             pokeNetwork();
         } catch (Throwable t) {
