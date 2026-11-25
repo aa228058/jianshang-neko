@@ -70,6 +70,8 @@ public final class JianshanResidentService extends Service {
     private long lastTickAt;
     private long lastMemCleanAt;
     private int memLogCounter;
+    private int tickCounter;
+    private String lastStateSummary;
     /** 见山：检测到长时间冻结后，进入 30 分钟"激进模式"，用 setAlarmClock 抢唤醒 */
     private static volatile long aggressiveUntil;
     private static volatile boolean running;
@@ -137,19 +139,25 @@ public final class JianshanResidentService extends Service {
                     aggressiveUntil = now + 30 * 60 * 1000L;
                     JianshanDiag.log(JianshanResidentService.this, "[freeze] 进程被冻结 " + (gap / 1000) + "s，进入激进唤醒模式 30min");
                 }
-                StringBuilder line = new StringBuilder("[tick] screen=").append(screenOn)
-                        .append(" gap=").append(gap / 1000).append('s');
+                // 只在“状态变了 / 间隔异常 / 每 8 跳”时落盘，避免 15 秒一条把 IO 写满
+                StringBuilder state = new StringBuilder("#").append(screenOn ? 1 : 0);
                 for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
                     try {
                         if (!UserConfig.getInstance(a).isClientActivated()) {
                             continue;
                         }
-                        line.append(" #").append(a).append('=')
+                        state.append(' ').append(a).append('=')
                                 .append(ConnectionsManager.getInstance(a).getConnectionState());
                     } catch (Throwable ignore) {
                     }
                 }
-                JianshanDiag.log(JianshanResidentService.this, line.toString());
+                final String summary = state.toString();
+                tickCounter++;
+                if (!summary.equals(lastStateSummary) || gap > 60_000L || tickCounter % 8 == 0) {
+                    lastStateSummary = summary;
+                    JianshanDiag.log(JianshanResidentService.this,
+                            "[tick] " + summary + " gap=" + (gap / 1000) + "s");
+                }
             }
             // 见山：这台机器把 MIUI 电量与性能服务禁用了，系统不再帮我们回收图片/表情缓存，
             // 堆会一路涨到 512MB 上限然后 OOM 卡死。所以这里自己做：后台每 5 分钟清一次图片内存缓存，
@@ -166,8 +174,8 @@ public final class JianshanResidentService extends Service {
                 if (lowHeap || timeToClean) {
                     lastMemCleanAt = now;
                     ImageLoader.getInstance().clearMemory();
-                    if (lowHeap) {
-                        // 见山：清完缓存还是 85%+，说明是 Java 层的垃圾堆着，直接催一次 GC
+                    if (lowHeap && !screenOn) {
+                        // 只在熄屏时催 GC：前台 GC 会掉帧
                         System.gc();
                     }
                     JianshanDiag.log(JianshanResidentService.this,
