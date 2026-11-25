@@ -92,6 +92,11 @@ public final class JianshanResidentService extends Service {
                 }
                 try {
                     ConnectionsManager cm = ConnectionsManager.getInstance(a);
+                    if (cm.getConnectionState() == ConnectionsManager.ConnectionStateConnectingToProxy
+                            && deadTicks[a] >= 1) {
+                        // 见山：卡在代理握手上就主动体检并切线路（换节点/代理挂了能自己恢复）
+                        ProxyRotationController.pokeProxyCheck();
+                    }
                     if (cm.getConnectionState() != ConnectionsManager.ConnectionStateConnected
                             || cm.getPauseTime() != 0) {
                         if (++deadTicks[a] >= 2) {
