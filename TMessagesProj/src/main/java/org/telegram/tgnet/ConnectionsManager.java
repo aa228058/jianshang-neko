@@ -1028,15 +1028,21 @@ public class ConnectionsManager extends BaseController {
         }
 
         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
+            // 见山：只给真正激活的账号下代理设置。
+            // 原来这里是全 20 个槽位都调 native_setProxySettings，
+            // 会在 native 层把 20 个 MTProto 实例全部建出来并开始连代理
+            //（日志里 a1~a19 一起 ConnectingToProxy 就是它），
+            // 结果 20 条连接抢网络和内存，真实账号 a0 的代理反而一直抖。
+            if (!UserConfig.getInstance(a).isClientActivated()) {
+                continue;
+            }
             if (enabled && settings != null && settings.isValid()) {
                 native_setProxySettings(a, address, port, username, password, secret);
             } else {
                 native_setProxySettings(a, "", 1080, "", "", "");
             }
             AccountInstance accountInstance = AccountInstance.getInstance(a);
-            if (accountInstance.getUserConfig().isClientActivated()) {
-                accountInstance.getMessagesController().checkPromoInfo(true);
-            }
+            accountInstance.getMessagesController().checkPromoInfo(true);
         }
     }
 
