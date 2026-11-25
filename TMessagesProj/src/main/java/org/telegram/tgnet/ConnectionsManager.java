@@ -843,6 +843,7 @@ public class ConnectionsManager extends BaseController {
     @Keep
     public static void onUnparsedMessageReceived(long address, final int currentAccount, long messageId) {
         try {
+            JianshanLinkProbe.onUpdate(currentAccount);
             NativeByteBuffer buff = NativeByteBuffer.wrap(address);
             buff.setDataSourceType(TLDataSourceType.NETWORK);
             buff.reused = true;
@@ -870,10 +871,12 @@ public class ConnectionsManager extends BaseController {
     }
 
     public static void onSessionCreated(final int currentAccount) {
+        JianshanLinkProbe.onSessionCreated(currentAccount);
         Utilities.stageQueue.postRunnable(() -> AccountInstance.getInstance(currentAccount).getMessagesController().getDifference());
     }
 
     public static void onConnectionStateChanged(final int state, final int currentAccount) {
+        JianshanLinkProbe.onState(currentAccount, state);
         AndroidUtilities.runOnUIThread(() -> {
             getInstance(currentAccount).connectionState = state;
             AccountInstance.getInstance(currentAccount).getNotificationCenter().postNotificationName(NotificationCenter.didUpdateConnectionState);
