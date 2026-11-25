@@ -202,6 +202,38 @@ public final class JianshanDiag {
         }
     }
 
+    /** 当前 Java 堆占用，返回 "used/total/max MB"，用于判断 OOM 前兆 */
+    public static String heapStats() {
+        try {
+            Runtime rt = Runtime.getRuntime();
+            long total = rt.totalMemory();
+            long free = rt.freeMemory();
+            long max = rt.maxMemory();
+            long used = total - free;
+            return (used >> 20) + "/" + (total >> 20) + "/" + (max >> 20) + "MB ("
+                    + (max > 0 ? used * 100 / max : 0) + "% of max)";
+        } catch (Throwable t) {
+            return "?";
+        }
+    }
+
+    public static long heapUsed() {
+        try {
+            Runtime rt = Runtime.getRuntime();
+            return rt.totalMemory() - rt.freeMemory();
+        } catch (Throwable t) {
+            return 0;
+        }
+    }
+
+    public static long heapMax() {
+        try {
+            return Runtime.getRuntime().maxMemory();
+        } catch (Throwable t) {
+            return 0;
+        }
+    }
+
     /** 生成完整报告文本 */
     public static String buildReport(Context context) {
         StringBuilder sb = new StringBuilder();
@@ -235,6 +267,20 @@ public final class JianshanDiag {
             }
         } catch (Throwable t) {
             sb.append("电源状态读取失败: ").append(t).append('\n');
+        }
+
+        sb.append("\n--- 内存 ---\n");
+        sb.append("Java 堆 used/total/max: ").append(heapStats()).append('\n');
+        try {
+            android.app.ActivityManager am = (android.app.ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+            if (am != null) {
+                android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
+                am.getMemoryInfo(mi);
+                sb.append("设备可用内存: ").append(mi.availMem >> 20).append("MB，低内存状态: ").append(mi.lowMemory).append('\n');
+                sb.append("应用内存等级: ").append(am.getMemoryClass()).append("MB largeHeap: ").append(am.getLargeMemoryClass()).append("MB\n");
+            }
+        } catch (Throwable t) {
+            sb.append("设备内存读取失败: ").append(t).append('\n');
         }
 
         sb.append("\n--- 通知状态 ---\n");
