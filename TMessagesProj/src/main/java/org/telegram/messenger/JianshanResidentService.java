@@ -68,6 +68,8 @@ public final class JianshanResidentService extends Service {
     private volatile boolean notificationShown;
     private int fgsRepostCounter;
     private long lastTickAt;
+    /** 见山：检测到长时间冻结后，进入 30 分钟"激进模式"，用 setAlarmClock 抢唤醒 */
+    private static volatile long aggressiveUntil;
     private static volatile boolean running;
 
     private final Runnable tick = new Runnable() {
@@ -124,6 +126,10 @@ public final class JianshanResidentService extends Service {
             {
                 final long gap = lastTickAt == 0 ? 0 : (now - lastTickAt);
                 lastTickAt = now;
+                if (gap > 180_000L) {
+                    aggressiveUntil = now + 30 * 60 * 1000L;
+                    JianshanDiag.log(this, "[freeze] 进程被冻结 " + (gap / 1000) + "s，进入激进唤醒模式 30min");
+                }
                 StringBuilder line = new StringBuilder("[tick] screen=").append(screenOn)
                         .append(" gap=").append(gap / 1000).append('s');
                 for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
@@ -352,9 +358,17 @@ public final class JianshanResidentService extends Service {
                 flags |= PendingIntent.FLAG_IMMUTABLE;
             }
             PendingIntent pi = PendingIntent.getBroadcast(context, ALARM_REQUEST_CODE, intent, flags);
-            final long interval = isScreenOn() ? ALARM_INTERVAL_ON_MS : ALARM_INTERVAL_OFF_MS;
+            final boolean aggressive = SystemClock.elapsedRealtime() < aggressiveUntil;
+            final long interval = aggressive ? 60_000L
+                    : (isScreenOn() ? ALARM_INTERVAL_ON_MS : ALARM_INTERVAL_OFF_MS);
             long at = System.currentTimeMillis() + interval;
-            if (Build.VERSION.SDK_INT >= 31 && am.canScheduleExactAlarms()) {
+            if (aggressive) {
+                // setAlarmClock 的优先级高于普通精确闹钟，厂商基本不敢推迟（代价：状态栏出现闹钟图标）
+                PendingIntent show = PendingIntent.getActivity(context, ALARM_REQUEST_CODE + 1,
+                        new Intent(context, LaunchActivity.class), flags);
+                am.setAlarmClock(new AlarmManager.AlarmClockInfo(at, show), pi);
+                JianshanDiag.log(context, "[alarm] armed ALARM_CLOCK in " + (interval / 1000) + "s");
+            } else if (Build.VERSION.SDK_INT >= 31 && am.canScheduleExactAlarms()) {
                 // 精确唤醒：HyperOS 冻结进程时，系统闹钟仍会被派发，这是唯一能穿透冻结的通道
                 am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
                 JianshanDiag.log(context, "[alarm] armed EXACT in " + (interval / 1000) + "s");
