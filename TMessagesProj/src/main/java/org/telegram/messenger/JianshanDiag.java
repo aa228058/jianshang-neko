@@ -270,6 +270,34 @@ public final class JianshanDiag {
         }
 
         sb.append("\n--- 内存 ---\n");
+        try {
+            android.app.ActivityManager am0 = (android.app.ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+            if (am0 != null) {
+                android.os.Debug.MemoryInfo[] mis = am0.getProcessMemoryInfo(new int[]{android.os.Process.myPid()});
+                if (mis != null && mis.length > 0) {
+                    sb.append("PSS 总计: ").append(mis[0].getTotalPss() / 1024).append(" MB");
+                    if (Build.VERSION.SDK_INT >= 23) {
+                        sb.append("（Java: ").append(mis[0].getMemoryStat("summary.java-heap") == null ? "-" : mis[0].getMemoryStat("summary.java-heap"))
+                          .append(" KB / Native: ").append(mis[0].getMemoryStat("summary.native-heap") == null ? "-" : mis[0].getMemoryStat("summary.native-heap"))
+                          .append(" KB / Graphics: ").append(mis[0].getMemoryStat("summary.graphics") == null ? "-" : mis[0].getMemoryStat("summary.graphics"))
+                          .append(" KB）");
+                    }
+                    sb.append('\n');
+                }
+            }
+        } catch (Throwable t) {
+            sb.append("PSS 读取失败: ").append(t).append('\n');
+        }
+        try {
+            long before = heapUsed();
+            System.gc();
+            Thread.sleep(300);
+            long after = heapUsed();
+            sb.append("手动 GC: ").append(before >> 20).append("MB → ").append(after >> 20)
+              .append("MB（回收了 ").append((before - after) >> 20).append("MB，剩下的才是真正活着的对象）\n");
+        } catch (Throwable t) {
+            sb.append("GC 测试失败: ").append(t).append('\n');
+        }
         sb.append("Java 堆 used/total/max: ").append(heapStats()).append('\n');
         try {
             android.app.ActivityManager am = (android.app.ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
