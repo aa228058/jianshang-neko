@@ -292,6 +292,19 @@ public final class JianshanDiag {
             sb.append("电源状态读取失败: ").append(t).append('\n');
         }
 
+        sb.append("\n--- 消息链路（判断“收不到”是没连上还是连上收不到）---\n");
+        for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
+            try {
+                if (!UserConfig.getInstance(a).isClientActivated()) {
+                    continue;
+                }
+                sb.append("  #").append(a).append(' ')
+                        .append(JianshanLinkProbe.describe(a)).append('\n');
+            } catch (Throwable ignore) {
+            }
+        }
+        sb.append("  （state=Connected 但 lastRx 很大 → socket 假活/代理半死；state=ConnectingToProxy → 代理没通）\n");
+
         sb.append("\n--- 内存 ---\n");
         try {
             android.app.ActivityManager am0 = (android.app.ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
