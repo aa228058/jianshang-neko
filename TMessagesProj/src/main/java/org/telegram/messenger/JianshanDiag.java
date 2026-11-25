@@ -18,6 +18,8 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -330,6 +332,30 @@ public final class JianshanDiag {
 
 
     private static volatile boolean watchdogStarted;
+    private static volatile boolean crashHandlerInstalled;
+
+    /** 崩溃兜底：把未捕获异常写进日志，下次拿去就能看到真实堆栈 */
+    public static void installCrashHandler(final Context context) {
+        if (crashHandlerInstalled || context == null) {
+            return;
+        }
+        crashHandlerInstalled = true;
+        try {
+            final Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
+            Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
+                try {
+                    StringWriter sw = new StringWriter();
+                    e.printStackTrace(new PrintWriter(sw));
+                    log(context, "[crash] thread=" + t.getName() + "\n" + sw);
+                } catch (Throwable ignore) {
+                }
+                if (prev != null) {
+                    prev.uncaughtException(t, e);
+                }
+            });
+        } catch (Throwable ignore) {
+        }
+    }
 
     /**
      * 主线程卡顿看门狗：每 2 秒往主线程 post 一个空任务，
