@@ -48,6 +48,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
     private final int jianshanClearDiagRow = rowId++;
     private final int jianshanTrimSavedRow = rowId++;
     private final int jianshanLowMemRow = rowId++;
+    private final int jianshanAxRow = rowId++;
 
     private final int nameOrderRow = rowId++;
     private final int idTypeRow = rowId++;
@@ -175,6 +176,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
         items.add(UItem.asButton(jianshanClearDiagRow, "清空诊断日志（重新开始记录）").slug("jsClearDiag"));
         items.add(UItem.asButton(jianshanTrimSavedRow, "压缩已保存消息（只留最近 800 条）").slug("jsTrimSaved"));
         items.add(UItem.asCheck(jianshanLowMemRow, "低内存模式（后台每分钟清图/少占内存）").slug("jsLowMem").setChecked(org.telegram.messenger.JianshanLocalStore.isLowMemMode()));
+        items.add(UItem.asButton(jianshanAxRow, "无障碍保活（大幅降低被清理概率）", org.telegram.messenger.JianshanAccessibilityService.isConnected() ? "已开启" : "去开启").slug("jsAx"));
         items.add(UItem.asShadow("只保存在本机，不上传服务器。"));
 
 
@@ -230,6 +232,14 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
             org.telegram.messenger.JianshanLocalStore.setSaveRecalledEnabled(next);
             if (view instanceof TextCheckCell) {
                 ((TextCheckCell) view).setChecked(next);
+            }
+            return;
+        }
+        if (id == jianshanAxRow) {
+            android.app.Activity actAx = getParentActivity();
+            if (actAx != null) {
+                org.telegram.messenger.JianshanBackgroundHelper.openAccessibilitySettings(actAx);
+                android.widget.Toast.makeText(actAx, "在「已下载的应用」里找到见山客户端并打开开关", android.widget.Toast.LENGTH_LONG).show();
             }
             return;
         }
