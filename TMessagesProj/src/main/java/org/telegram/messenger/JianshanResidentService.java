@@ -166,6 +166,10 @@ public final class JianshanResidentService extends Service {
                 if (lowHeap || timeToClean) {
                     lastMemCleanAt = now;
                     ImageLoader.getInstance().clearMemory();
+                    if (lowHeap) {
+                        // 见山：清完缓存还是 85%+，说明是 Java 层的垃圾堆着，直接催一次 GC
+                        System.gc();
+                    }
                     JianshanDiag.log(JianshanResidentService.this,
                             "[mem] cleared image cache (" + (lowHeap ? "low heap" : "screen off") + ") " + JianshanDiag.heapStats());
                 }
