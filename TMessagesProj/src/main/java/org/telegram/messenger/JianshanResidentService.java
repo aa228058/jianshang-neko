@@ -146,8 +146,12 @@ public final class JianshanResidentService extends Service {
                         if (!UserConfig.getInstance(a).isClientActivated()) {
                             continue;
                         }
+                        final ConnectionsManager cmA = ConnectionsManager.getInstance(a);
                         state.append(' ').append(a).append('=')
-                                .append(ConnectionsManager.getInstance(a).getConnectionState());
+                                .append(cmA.getConnectionState())
+                                .append("/rx").append(JianshanLinkProbe.ageSeconds(a)).append('s');
+                        JianshanLinkProbe.checkSilent(a,
+                                cmA.getConnectionState() == ConnectionsManager.ConnectionStateConnected);
                     } catch (Throwable ignore) {
                     }
                 }
