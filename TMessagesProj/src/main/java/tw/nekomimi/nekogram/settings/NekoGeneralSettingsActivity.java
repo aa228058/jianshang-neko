@@ -46,6 +46,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
     private final int jianshanGuideRow = rowId++;
     private final int jianshanDiagRow = rowId++;
     private final int jianshanClearDiagRow = rowId++;
+    private final int jianshanTrimSavedRow = rowId++;
 
     private final int nameOrderRow = rowId++;
     private final int idTypeRow = rowId++;
@@ -171,6 +172,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
         items.add(UItem.asButton(jianshanGuideRow, "后台存活引导（白名单 / 自启动 / 通知）").slug("jsGuide"));
         items.add(UItem.asButton(jianshanDiagRow, "后台诊断（复制报告给我）").slug("jsDiag"));
         items.add(UItem.asButton(jianshanClearDiagRow, "清空诊断日志（重新开始记录）").slug("jsClearDiag"));
+        items.add(UItem.asButton(jianshanTrimSavedRow, "压缩已保存消息（只留最近 800 条）").slug("jsTrimSaved"));
         items.add(UItem.asShadow("只保存在本机，不上传服务器。"));
 
 
@@ -226,6 +228,15 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
             org.telegram.messenger.JianshanLocalStore.setSaveRecalledEnabled(next);
             if (view instanceof TextCheckCell) {
                 ((TextCheckCell) view).setChecked(next);
+            }
+            return;
+        }
+        if (id == jianshanTrimSavedRow) {
+            android.app.Activity actT = getParentActivity();
+            if (actT != null) {
+                int before = org.telegram.messenger.JianshanLocalStore.savedCount();
+                org.telegram.messenger.JianshanLocalStore.trimSavedAsync();
+                android.widget.Toast.makeText(actT, "开始压缩，原来有 " + before + " 条", android.widget.Toast.LENGTH_SHORT).show();
             }
             return;
         }
