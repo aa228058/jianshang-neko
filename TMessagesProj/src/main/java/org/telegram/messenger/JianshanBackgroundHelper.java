@@ -153,6 +153,19 @@ public final class JianshanBackgroundHelper {
         openAppDetails(activity);
     }
 
+    /** 见山：跳到系统「无障碍」设置页，让用户手动启用保活服务 */
+    public static void openAccessibilitySettings(Activity activity) {
+        if (activity == null) {
+            return;
+        }
+        try {
+            activity.startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+        } catch (Throwable t) {
+            FileLog.e(t);
+            openAppDetails(activity);
+        }
+    }
+
     public static void openAppDetails(Activity activity) {
         if (activity == null) {
             return;
