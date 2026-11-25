@@ -42,6 +42,7 @@ public final class JianshanLocalStore {
     private static volatile boolean antiRevoke = true;
     private static volatile boolean saveRecalled = true;
     private static volatile boolean fakeEnabled = true;
+    private static volatile boolean lowMemMode = false;
 
     private static void loadFlags() {
         try {
@@ -98,6 +99,16 @@ public final class JianshanLocalStore {
             }
         } catch (Throwable ignore) {
         }
+    }
+
+    /** 见山：低内存模式 —— 后台更勤地清图片缓存、减少后台维护开销 */
+    public static boolean isLowMemMode() {
+        return flagsLoaded ? lowMemMode : false;
+    }
+
+    public static void setLowMemMode(boolean value) {
+        lowMemMode = value;
+        writeAsync(p -> p.edit().putBoolean("low_mem_mode", value).apply());
     }
 
     public static boolean isFakeEnabled() {
