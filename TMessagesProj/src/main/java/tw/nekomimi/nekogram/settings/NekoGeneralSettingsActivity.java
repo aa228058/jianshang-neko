@@ -45,6 +45,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
     private final int jianshanResidentRow = rowId++;
     private final int jianshanGuideRow = rowId++;
     private final int jianshanDiagRow = rowId++;
+    private final int jianshanClearDiagRow = rowId++;
 
     private final int nameOrderRow = rowId++;
     private final int idTypeRow = rowId++;
@@ -169,6 +170,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
         items.add(UItem.asButton(jianshanInboxRow, "汇总（私聊未读 + @我/回复我的）").slug("jsInbox"));
         items.add(UItem.asButton(jianshanGuideRow, "后台存活引导（白名单 / 自启动 / 通知）").slug("jsGuide"));
         items.add(UItem.asButton(jianshanDiagRow, "后台诊断（复制报告给我）").slug("jsDiag"));
+        items.add(UItem.asButton(jianshanClearDiagRow, "清空诊断日志（重新开始记录）").slug("jsClearDiag"));
         items.add(UItem.asShadow("只保存在本机，不上传服务器。"));
 
 
@@ -224,6 +226,17 @@ public class NekoGeneralSettingsActivity extends BaseNekoSettingsActivity {
             org.telegram.messenger.JianshanLocalStore.setSaveRecalledEnabled(next);
             if (view instanceof TextCheckCell) {
                 ((TextCheckCell) view).setChecked(next);
+            }
+            return;
+        }
+        if (id == jianshanClearDiagRow) {
+            android.app.Activity act0 = getParentActivity();
+            if (act0 != null) {
+                org.telegram.messenger.JianshanDiag.clearLog(act0);
+                android.widget.Toast.makeText(act0, "诊断日志已清空，从现在开始重新记录", android.widget.Toast.LENGTH_SHORT).show();
+                if (listView != null && listView.adapter != null) {
+                    listView.adapter.update(true);
+                }
             }
             return;
         }
