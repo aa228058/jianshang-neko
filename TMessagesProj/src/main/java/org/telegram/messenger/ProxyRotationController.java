@@ -55,6 +55,20 @@ public class ProxyRotationController implements NotificationCenter.NotificationC
         INSTANCE.initInternal();
     }
 
+    /**
+     * 见山：保活 tick 用。卡在 ConnectingToProxy 时主动做一次代理体检 + 切线路，
+     * 不用等系统那 10 秒一次的被动触发。
+     */
+    public static void pokeProxyCheck() {
+        try {
+            if (!SharedConfig.isProxyEnabled() || SharedConfig.proxyList.size() <= 1) {
+                return;
+            }
+            AndroidUtilities.runOnUIThread(INSTANCE.checkProxyAndSwitchRunnable, 0);
+        } catch (Throwable ignore) {
+        }
+    }
+
     @SuppressWarnings("ComparatorCombinators")
     private void switchToAvailable() {
         isCurrentlyChecking = false;
@@ -101,7 +115,8 @@ public class ProxyRotationController implements NotificationCenter.NotificationC
             switchToAvailable();
         } else if (id == NotificationCenter.proxySettingsChanged) {
             AndroidUtilities.cancelRunOnUIThread(checkProxyAndSwitchRunnable);
-        } else if (id == NotificationCenter.didUpdateConnectionState && account == UserConfig.selectedAccount) {
+        } else if (id == NotificationCenter.didUpdateConnectionState) {
+            // 见山：原来只盯 selectedAccount，多账号时其它账号卡在代理上没人管，这里全部覆盖
             if (!SharedConfig.isProxyEnabled() && !SharedConfig.proxyRotationEnabled || SharedConfig.proxyList.size() <= 1) {
                 return;
             }
