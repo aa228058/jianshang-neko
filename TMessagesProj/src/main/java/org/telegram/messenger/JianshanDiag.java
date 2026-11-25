@@ -65,17 +65,41 @@ public final class JianshanDiag {
         log(context, "[diag] log cleared by user");
     }
 
-    /** 追加一行诊断日志（线程安全，失败静默） */
+    private static final StringBuilder PENDING = new StringBuilder();
+    private static long lastFlushAt;
+
+    /** 追加一行诊断日志：先进内存缓冲，攒够 4KB 或隔 1 秒才真正写盘（原来每行开关一次文件） */
     public static void log(Context context, String line) {
         if (context == null) {
             return;
         }
         synchronized (LOCK) {
-            FileOutputStream out = null;
             try {
+                String ts = new SimpleDateFormat("MM-dd HH:mm:ss", Locale.US).format(new Date());
+                PENDING.append(ts).append(' ').append(line).append('\n');
+                long now = android.os.SystemClock.elapsedRealtime();
+                boolean urgent = line.startsWith("[crash]") || line.startsWith("[diag]");
+                if (urgent || PENDING.length() >= 4096 || now - lastFlushAt >= 1000) {
+                    flushLocked(context, now);
+                }
+            } catch (Throwable ignore) {
+            }
+        }
+    }
+
+    private static void flushLocked(Context context, long now) {
+        if (PENDING.length() == 0) {
+            lastFlushAt = now;
+            return;
+        }
+        FileOutputStream out = null;
+        try {
+            String chunk = PENDING.toString();
+            PENDING.setLength(0);
+            lastFlushAt = now;
+            {
                 File f = logFile(context);
                 if (f.exists() && f.length() > MAX_LOG_BYTES) {
-                    // 简单轮转：留后一半
                     byte[] keep = readTail(f, (int) (MAX_LOG_BYTES / 2));
                     //noinspection ResultOfMethodCallIgnored
                     f.delete();
@@ -84,15 +108,14 @@ public final class JianshanDiag {
                     o2.close();
                 }
                 out = new FileOutputStream(f, true);
-                String ts = new SimpleDateFormat("MM-dd HH:mm:ss", Locale.US).format(new Date());
-                out.write((ts + " " + line + "\n").getBytes());
-            } catch (Throwable ignore) {
-            } finally {
-                if (out != null) {
-                    try {
-                        out.close();
-                    } catch (IOException ignore) {
-                    }
+                out.write(chunk.getBytes());
+            }
+        } catch (Throwable ignore) {
+        } finally {
+            if (out != null) {
+                try {
+                    out.close();
+                } catch (IOException ignore) {
                 }
             }
         }
@@ -475,7 +498,7 @@ public final class JianshanDiag {
                     final long postedAt = SystemClock.elapsedRealtime();
                     main.post(() -> ran[0] = SystemClock.elapsedRealtime());
                     try {
-                        Thread.sleep(2000);
+                        Thread.sleep(5000);
                     } catch (InterruptedException e) {
                         return;
                     }
