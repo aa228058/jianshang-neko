@@ -200,30 +200,49 @@ public class JianshanInboxActivity extends BaseFragment implements NotificationC
         content.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
         fragmentView = content;
-        warmUpAccounts();
         loadRows();
         return fragmentView;
     }
 
-    /** 见山：汇总要覆盖所有账号 —— 先把各账号的会话列表从本地库热起来 */
+    /** 见山：跨账号预热很贵（每个账号一次 loadDialogs + 一份会话列表常驻内存），
+     *  所以：① 60 秒节流 ② 每 300ms 只处理一个账号 ③ 不再强制从服务器拉（force=false） */
+    private long lastWarmAt;
+    private int warmIndex;
+
     private void warmUpAccounts() {
-        for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
-            if (!UserConfig.getInstance(a).isClientActivated()) {
-                continue;
-            }
-            try {
+        final long now = android.os.SystemClock.elapsedRealtime();
+        if (now - lastWarmAt < 60_000L) {
+            return;
+        }
+        lastWarmAt = now;
+        warmIndex = 0;
+        warmNext();
+    }
+
+    private void warmNext() {
+        if (isPaused || warmIndex >= UserConfig.MAX_ACCOUNT_COUNT || getParentActivity() == null) {
+            return;
+        }
+        final int a = warmIndex++;
+        try {
+            if (UserConfig.getInstance(a).isClientActivated()) {
                 MessagesController mc = MessagesController.getInstance(a);
                 if (mc.getAllDialogs().isEmpty()) {
-                    mc.loadDialogs(0, 0, 100, true);
+                    // force=false：先用本地库，缺了再让 Telegram 自己按需拉
+                    mc.loadDialogs(0, 0, 100, false);
                 }
-            } catch (Throwable ignore) {
             }
+        } catch (Throwable ignore) {
         }
+        AndroidUtilities.runOnUIThread(this::warmNext, 300);
     }
+
+    private boolean isPaused = true;
 
     @Override
     public void onResume() {
         super.onResume();
+        isPaused = false;
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.dialogsNeedReload);
         warmUpAccounts();
         loadRows();
@@ -232,15 +251,23 @@ public class JianshanInboxActivity extends BaseFragment implements NotificationC
     @Override
     public void onPause() {
         super.onPause();
+        isPaused = true;
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.dialogsNeedReload);
     }
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
         if (id == NotificationCenter.dialogsNeedReload) {
+            final long now = android.os.SystemClock.elapsedRealtime();
+            if (now - lastRowsAt < 800L) {
+                return;   // 见山：会话列表频繁刷新时别每次都重建全部行
+            }
+            lastRowsAt = now;
             loadRows();
         }
     }
+
+    private long lastRowsAt;
 
     private void loadRows() {
         ArrayList<Row> rows = new ArrayList<>();
