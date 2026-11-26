@@ -56,7 +56,9 @@ public class AppGlobalConfig {
 
     public final ConfigInt passkeysAccountPasskeysMax = ofInt("passkeys_account_passkeys_max", 5);
 
-    public final ConfigBoolean settingsDisplayPasskeys = ofBoolean("settings_display_passkeys", BuildVars.DEBUG_VERSION ? true : false);
+    // 见山：默认显示「通行密钥」入口（官方 release 包默认隐藏，只有 debug 包才显示），
+    // 这样非官方包也能在 设置 → 隐私与安全 里创建/管理 passkey。
+    public final ConfigBoolean settingsDisplayPasskeys = ofBoolean("settings_display_passkeys", true);
 
     public final ConfigBoolean disableBlurInLightTheme = ofBoolean("android_disable_blur_in_light_theme", false);
     public final ConfigBoolean disableBlurInDarkTheme = ofBoolean("android_disable_blur_in_dark_theme", false);
