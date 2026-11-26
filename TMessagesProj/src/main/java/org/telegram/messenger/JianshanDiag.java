@@ -355,6 +355,23 @@ public final class JianshanDiag {
             sb.append("本地存储统计失败: ").append(t).append('\n');
         }
 
+        sb.append("\n--- 通行密钥（Passkey）---\n");
+        try {
+            sb.append("入口开关 settings_display_passkeys: ")
+              .append(MessagesController.getInstance(UserConfig.selectedAccount).config.settingsDisplayPasskeys.get()).append('\n');
+            sb.append("上限 passkeys_account_passkeys_max: ")
+              .append(MessagesController.getInstance(UserConfig.selectedAccount).config.passkeysAccountPasskeysMax.get()).append('\n');
+            boolean provider = false;
+            try {
+                Class.forName("androidx.credentials.CredentialManager");
+                provider = Build.VERSION.SDK_INT >= 34;
+            } catch (Throwable ignore) {
+            }
+            sb.append("系统 CredentialManager 可用: ").append(provider).append('\n');
+        } catch (Throwable t) {
+            sb.append("Passkey 状态读取失败: ").append(t).append('\n');
+        }
+
         sb.append("\n--- 通知状态 ---\n");
         try {
             sb.append("通知总开关: ").append(NotificationManagerCompat.from(context).areNotificationsEnabled()).append('\n');
